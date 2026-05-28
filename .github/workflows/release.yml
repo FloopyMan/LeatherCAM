@@ -8,7 +8,12 @@ on:
 
 jobs:
   linux-appimage:
-    runs-on: ubuntu-latest
+    # ubuntu-22.04 still ships libfuse2 in apt; 24.04 dropped it.
+    runs-on: ubuntu-22.04
+    env:
+      # GitHub runners disallow FUSE — tell appimagetool to extract
+      # itself and run from a temp dir instead of mounting via FUSE.
+      APPIMAGE_EXTRACT_AND_RUN: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -21,7 +26,7 @@ jobs:
       - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfuse2
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfuse2 file desktop-file-utils
 
       - name: Install package and PyInstaller
         run: |
@@ -30,7 +35,8 @@ jobs:
 
       - name: Download appimagetool
         run: |
-          curl -sSL -o appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          curl -sSL -o appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool
           sudo mv appimagetool /usr/local/bin/
 

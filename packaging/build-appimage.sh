@@ -17,7 +17,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 VENV_PY="${PYTHON:-.venv-dist/bin/python}"
-if [[ ! -x "$VENV_PY" ]]; then
+# Accept either an executable path or a PATH-resolvable command name.
+if ! command -v "$VENV_PY" >/dev/null 2>&1 && [[ ! -x "$VENV_PY" ]]; then
     echo "error: $VENV_PY not found." >&2
     echo "Build with 'make appimage' — it creates an isolated .venv-dist" >&2
     echo "without --system-site-packages, so PyInstaller only sees the" >&2
