@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSlider,
     QSpinBox,
     QSplitter,
@@ -444,12 +445,18 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.time_label)
         right_layout.addWidget(self.bounds_label)
 
+        params_scroll = QScrollArea()
+        params_scroll.setWidget(self.params)
+        params_scroll.setWidgetResizable(True)
+        params_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        params_scroll.setMinimumWidth(self.params.sizeHint().width() + 24)
+
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self.params)
+        splitter.addWidget(params_scroll)
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([380, 900])
+        splitter.setSizes([400, 900])
         self.setCentralWidget(splitter)
 
         self._recent_menu: Any = None
