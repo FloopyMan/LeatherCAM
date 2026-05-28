@@ -49,14 +49,23 @@ dev-install: .venv
 dist-install: .venv
 	.venv/bin/python -m pip install ".[dist]"
 
-build:
-	$(PYTHON) -m PyInstaller --noconfirm packaging/leathercam.spec
+# Isolated venv WITHOUT --system-site-packages so PyInstaller only sees
+# the runtime deps declared in pyproject.toml — the dev .venv inherits
+# whatever the user has installed system-wide (torch, tensorflow, ...),
+# which would otherwise get bundled into the binary.
+.venv-dist:
+	python3 -m venv .venv-dist
+	.venv-dist/bin/python -m pip install --upgrade pip
+	.venv-dist/bin/python -m pip install ".[dist]"
+
+build: .venv-dist
+	.venv-dist/bin/python -m PyInstaller --noconfirm packaging/leathercam.spec
 	@echo
 	@echo "Built dist/leathercam/. Launch: ./dist/leathercam/leathercam"
 
-appimage:
-	bash packaging/build-appimage.sh
+appimage: .venv-dist
+	PYTHON=.venv-dist/bin/python bash packaging/build-appimage.sh
 
 clean:
-	rm -rf build dist *.egg-info .pytest_cache .ruff_cache .mypy_cache
+	rm -rf build dist *.egg-info .pytest_cache .ruff_cache .mypy_cache .venv-dist
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

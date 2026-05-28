@@ -16,9 +16,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-VENV_PY="${PYTHON:-.venv/bin/python}"
+VENV_PY="${PYTHON:-.venv-dist/bin/python}"
 if [[ ! -x "$VENV_PY" ]]; then
-    echo "error: $VENV_PY not found. Run 'make dev-install' first." >&2
+    echo "error: $VENV_PY not found." >&2
+    echo "Build with 'make appimage' — it creates an isolated .venv-dist" >&2
+    echo "without --system-site-packages, so PyInstaller only sees the" >&2
+    echo "runtime dependencies declared in pyproject.toml." >&2
     exit 1
 fi
 

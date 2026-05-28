@@ -5,6 +5,7 @@ __pycache__/
 *.so
 .Python
 .venv/
+.venv-dist/
 venv/
 env/
 *.egg-info/
@@ -46,3 +47,7 @@ logs/
 
 # PyInstaller
 *.spec
+!packaging/leathercam.spec
+# auto-generated placeholder icon for AppImage builds; replace with the
+# real artwork (manually committed) before tagging a release.
+packaging/leathercam.png
