@@ -308,6 +308,40 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
 
+        presets_menu = self.menuBar().addMenu("&Пресеты")
+
+        cliche_action = QAction("Клише для &тиснения (растровая, фон + зеркало)", self)
+        cliche_action.triggered.connect(self._apply_cliche_preset)
+        presets_menu.addAction(cliche_action)
+
+        engrave_action = QAction("&Гравировка по линии (растровая, без зеркала)", self)
+        engrave_action.triggered.connect(self._apply_engrave_preset)
+        presets_menu.addAction(engrave_action)
+
+    def _apply_cliche_preset(self) -> None:
+        """Configure the form for a leather-embossing cliché.
+
+        Cuts the background of a black-and-white image and mirrors the
+        result so the impression reads correctly when pressed into leather.
+        """
+        self.params.set_strategy(STRATEGY_RASTER)
+        self.params.invert.setChecked(True)
+        self.params.mirror_x.setChecked(True)
+        self.status_label.setText(
+            "Пресет «Клише»: растровая, инвертировано (резать фон), зеркало по X."
+        )
+        if self._image is not None:
+            self._on_preview()
+
+    def _apply_engrave_preset(self) -> None:
+        """Configure the form for engraving an image (cut the dark lines)."""
+        self.params.set_strategy(STRATEGY_RASTER)
+        self.params.invert.setChecked(False)
+        self.params.mirror_x.setChecked(False)
+        self.status_label.setText("Пресет «Гравировка»: растровая, резать тёмные пиксели.")
+        if self._image is not None:
+            self._on_preview()
+
     def _on_open_image(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(
             self,
