@@ -84,3 +84,12 @@ def test_drawn_shape_produces_proportional_path_length() -> None:
     code = generate_gcode(image, _params(target_width_mm=8.0, pixel_size_mm=1.0))
     plunges = [line for line in code.splitlines() if "Z-0.400" in line]
     assert plunges
+
+
+def test_raster_mirror_flips_pixels_horizontally() -> None:
+    image = Image.new("L", (4, 1), color=255)
+    image.putpixel((0, 0), 0)
+    plain = generate_gcode(image, _params(target_width_mm=4.0, pixel_size_mm=1.0))
+    mirrored = generate_gcode(image, _params(target_width_mm=4.0, pixel_size_mm=1.0, mirror_x=True))
+    assert "X0.500" in plain
+    assert "X3.500" in mirrored

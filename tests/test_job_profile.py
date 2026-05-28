@@ -50,3 +50,12 @@ def test_inside_side_shrinks_visible_bbox() -> None:
     code_on = generate_profile_gcode([_square()], _params(side="on"))
     code_inside = generate_profile_gcode([_square()], _params(side="inside"))
     assert code_on != code_inside
+
+
+def test_profile_mirror_keeps_bbox_but_reverses_x_order() -> None:
+    poly = Polyline(points=((0.0, 0.0), (3.0, 0.0), (10.0, 0.0)), closed=False)
+    plain = generate_profile_gcode([poly], _params())
+    mirrored = generate_profile_gcode([poly], _params(mirror_x=True))
+    assert plain != mirrored
+    assert "X3." in plain
+    assert "X7." in mirrored

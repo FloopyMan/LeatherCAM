@@ -116,10 +116,16 @@ class _Parameters(QWidget):
         machine_form.addRow("Обороты шпинделя:", self.spindle_rpm)
         machine_form.addRow("Safe Z:", self.safe_z)
 
+        stamp_box = QGroupBox("Клише")
+        stamp_form = QFormLayout(stamp_box)
+        self.mirror_x = QCheckBox("Зеркалить по X (для штампа)")
+        stamp_form.addRow(self.mirror_x)
+
         layout.addWidget(strategy_box)
         layout.addWidget(self.image_box)
         layout.addWidget(self.vector_box)
         layout.addWidget(cut_box)
+        layout.addWidget(stamp_box)
         layout.addWidget(machine_box)
         layout.addStretch(1)
 
@@ -168,6 +174,7 @@ class _Parameters(QWidget):
             feed_z=float(self.feed_z.value()),
             spindle_rpm=int(self.spindle_rpm.value()),
             safe_z=float(self.safe_z.value()),
+            mirror_x=bool(self.mirror_x.isChecked()),
         )
 
     def to_profile_parameters(self) -> ProfileJobParameters:
@@ -180,6 +187,7 @@ class _Parameters(QWidget):
             feed_z=float(self.feed_z.value()),
             spindle_rpm=int(self.spindle_rpm.value()),
             safe_z=float(self.safe_z.value()),
+            mirror_x=bool(self.mirror_x.isChecked()),
         )
 
     def to_pocket_parameters(self) -> PocketJobParameters:
@@ -192,6 +200,7 @@ class _Parameters(QWidget):
             feed_z=float(self.feed_z.value()),
             spindle_rpm=int(self.spindle_rpm.value()),
             safe_z=float(self.safe_z.value()),
+            mirror_x=bool(self.mirror_x.isChecked()),
         )
 
     # Back-compat for stage 1 tests.

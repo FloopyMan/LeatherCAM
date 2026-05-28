@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from PIL import ImageOps
 from PIL.Image import Image
 
 from leathercam.cam import pocket, profile, raster_zigzag
@@ -15,6 +16,7 @@ from leathercam.cam.profile import Side
 from leathercam.gcode import JobConfig, Move, postprocess
 from leathercam.image import Raster, to_mask
 from leathercam.vector import Polyline
+from leathercam.vector import mirror_x as _mirror_x
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,7 @@ class JobParameters:
     safe_z: float
 
     origin: tuple[float, float] = (0.0, 0.0)
+    mirror_x: bool = False
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,7 @@ class ProfileJobParameters:
     safe_z: float
 
     origin: tuple[float, float] = (0.0, 0.0)
+    mirror_x: bool = False
 
 
 @dataclass(frozen=True)
@@ -71,11 +75,13 @@ class PocketJobParameters:
     safe_z: float
 
     origin: tuple[float, float] = (0.0, 0.0)
+    mirror_x: bool = False
 
 
 def build_raster(image: Image, params: JobParameters) -> Raster:
+    src = ImageOps.mirror(image) if params.mirror_x else image
     return to_mask(
-        image,
+        src,
         target_width_mm=params.target_width_mm,
         pixel_size_mm=params.pixel_size_mm,
         threshold=params.threshold,
@@ -94,8 +100,9 @@ def build_moves(raster: Raster, params: JobParameters) -> list[Move]:
 
 
 def build_profile_moves(polylines: list[Polyline], params: ProfileJobParameters) -> list[Move]:
+    src = _mirror_x(polylines) if params.mirror_x else polylines
     return profile(
-        polylines,
+        src,
         depth_mm=params.depth_mm,
         step_down_mm=params.step_down_mm,
         safe_z=params.safe_z,
@@ -106,8 +113,9 @@ def build_profile_moves(polylines: list[Polyline], params: ProfileJobParameters)
 
 
 def build_pocket_moves(polylines: list[Polyline], params: PocketJobParameters) -> list[Move]:
+    src = _mirror_x(polylines) if params.mirror_x else polylines
     return pocket(
-        polylines,
+        src,
         depth_mm=params.depth_mm,
         step_down_mm=params.step_down_mm,
         safe_z=params.safe_z,
