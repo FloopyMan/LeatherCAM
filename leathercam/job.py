@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from PIL.Image import Image
 
-from leathercam.cam import profile, raster_zigzag
+from leathercam.cam import pocket, profile, raster_zigzag
 from leathercam.cam.profile import Side
 from leathercam.gcode import JobConfig, Move, postprocess
 from leathercam.image import Raster, to_mask
@@ -55,6 +55,24 @@ class ProfileJobParameters:
     origin: tuple[float, float] = (0.0, 0.0)
 
 
+@dataclass(frozen=True)
+class PocketJobParameters:
+    """Stage-3 pocket (area clearing) parameters."""
+
+    tool_diameter_mm: float
+    step_over_mm: float
+
+    depth_mm: float
+    step_down_mm: float
+
+    feed_xy: float
+    feed_z: float
+    spindle_rpm: int
+    safe_z: float
+
+    origin: tuple[float, float] = (0.0, 0.0)
+
+
 def build_raster(image: Image, params: JobParameters) -> Raster:
     return to_mask(
         image,
@@ -87,7 +105,19 @@ def build_profile_moves(polylines: list[Polyline], params: ProfileJobParameters)
     )
 
 
-def _config(params: JobParameters | ProfileJobParameters) -> JobConfig:
+def build_pocket_moves(polylines: list[Polyline], params: PocketJobParameters) -> list[Move]:
+    return pocket(
+        polylines,
+        depth_mm=params.depth_mm,
+        step_down_mm=params.step_down_mm,
+        safe_z=params.safe_z,
+        tool_diameter_mm=params.tool_diameter_mm,
+        step_over_mm=params.step_over_mm,
+        origin=params.origin,
+    )
+
+
+def _config(params: JobParameters | ProfileJobParameters | PocketJobParameters) -> JobConfig:
     return JobConfig(
         feed_xy=params.feed_xy,
         feed_z=params.feed_z,
@@ -106,4 +136,10 @@ def generate_gcode(image: Image, params: JobParameters) -> str:
 def generate_profile_gcode(polylines: list[Polyline], params: ProfileJobParameters) -> str:
     """Run the profile pipeline: polylines → contour toolpath → G-code text."""
     moves = build_profile_moves(polylines, params)
+    return postprocess(moves, _config(params))
+
+
+def generate_pocket_gcode(polylines: list[Polyline], params: PocketJobParameters) -> str:
+    """Run the pocket pipeline: polylines → area-cleared toolpath → G-code text."""
+    moves = build_pocket_moves(polylines, params)
     return postprocess(moves, _config(params))

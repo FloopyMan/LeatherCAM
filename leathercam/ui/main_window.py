@@ -40,11 +40,14 @@ from PySide6.QtWidgets import (
 
 from leathercam.job import (
     JobParameters,
+    PocketJobParameters,
     ProfileJobParameters,
     build_moves,
+    build_pocket_moves,
     build_profile_moves,
     build_raster,
     generate_gcode,
+    generate_pocket_gcode,
     generate_profile_gcode,
 )
 from leathercam.preview import render_toolpath
@@ -54,6 +57,7 @@ logger = logging.getLogger(__name__)
 
 STRATEGY_RASTER = "raster"
 STRATEGY_PROFILE = "profile"
+STRATEGY_POCKET = "pocket"
 
 
 class _Parameters(QWidget):
@@ -69,6 +73,7 @@ class _Parameters(QWidget):
         self.strategy = QComboBox()
         self.strategy.addItem("Растровая (PNG/JPG)", STRATEGY_RASTER)
         self.strategy.addItem("Контурная (SVG/DXF)", STRATEGY_PROFILE)
+        self.strategy.addItem("Карман (SVG/DXF, выборка фона)", STRATEGY_POCKET)
         self.strategy.currentIndexChanged.connect(self._sync_visibility)
         strategy_form.addRow("Тип:", self.strategy)
 
@@ -88,8 +93,10 @@ class _Parameters(QWidget):
         self.tool_diameter = self._double(0.05, 12.0, 1.0, 0.05, " мм")
         self.side = QComboBox()
         self.side.addItems(["on", "inside", "outside"])
+        self.step_over = self._double(0.05, 5.0, 0.5, 0.05, " мм")
         vector_form.addRow("Диаметр фрезы:", self.tool_diameter)
-        vector_form.addRow("Сторона:", self.side)
+        vector_form.addRow("Сторона (Profile):", self.side)
+        vector_form.addRow("Шаг (step-over, Pocket):", self.step_over)
 
         cut_box = QGroupBox("Глубина")
         cut_form = QFormLayout(cut_box)
@@ -138,7 +145,7 @@ class _Parameters(QWidget):
     def _sync_visibility(self) -> None:
         strategy = self.strategy.currentData()
         self.image_box.setVisible(strategy == STRATEGY_RASTER)
-        self.vector_box.setVisible(strategy == STRATEGY_PROFILE)
+        self.vector_box.setVisible(strategy in (STRATEGY_PROFILE, STRATEGY_POCKET))
 
     def current_strategy(self) -> str:
         return str(self.strategy.currentData())
@@ -167,6 +174,18 @@ class _Parameters(QWidget):
         return ProfileJobParameters(
             tool_diameter_mm=float(self.tool_diameter.value()),
             side=self.side.currentText(),  # type: ignore[arg-type]
+            depth_mm=float(self.depth.value()),
+            step_down_mm=float(self.step_down.value()),
+            feed_xy=float(self.feed_xy.value()),
+            feed_z=float(self.feed_z.value()),
+            spindle_rpm=int(self.spindle_rpm.value()),
+            safe_z=float(self.safe_z.value()),
+        )
+
+    def to_pocket_parameters(self) -> PocketJobParameters:
+        return PocketJobParameters(
+            tool_diameter_mm=float(self.tool_diameter.value()),
+            step_over_mm=float(self.step_over.value()),
             depth_mm=float(self.depth.value()),
             step_down_mm=float(self.step_down.value()),
             feed_xy=float(self.feed_xy.value()),
@@ -315,16 +334,21 @@ class MainWindow(QMainWindow):
         strategy = self.params.current_strategy()
         try:
             if strategy == STRATEGY_RASTER and self._image is not None:
-                params = self.params.to_raster_parameters()
-                raster = build_raster(self._image, params)
-                moves = build_moves(raster, params)
+                rparams = self.params.to_raster_parameters()
+                raster = build_raster(self._image, rparams)
+                moves = build_moves(raster, rparams)
                 w, h = raster.width_mm, raster.height_mm
                 size_text = f"{w:.1f}×{h:.1f} мм"
             elif strategy == STRATEGY_PROFILE and self._polylines:
-                params = self.params.to_profile_parameters()
-                moves = build_profile_moves(self._polylines, params)
+                pparams = self.params.to_profile_parameters()
+                moves = build_profile_moves(self._polylines, pparams)
                 w = h = None
                 size_text = f"полилиний: {len(self._polylines)}"
+            elif strategy == STRATEGY_POCKET and self._polylines:
+                kparams = self.params.to_pocket_parameters()
+                moves = build_pocket_moves(self._polylines, kparams)
+                w = h = None
+                size_text = f"карманов: {sum(1 for p in self._polylines if p.closed)}"
             else:
                 return
         except ValueError as exc:
@@ -343,11 +367,16 @@ class MainWindow(QMainWindow):
                     QMessageBox.information(self, "Нет данных", "Сначала откройте изображение.")
                     return
                 code = generate_gcode(self._image, self.params.to_raster_parameters())
-            else:
+            elif strategy == STRATEGY_PROFILE:
                 if not self._polylines:
                     QMessageBox.information(self, "Нет данных", "Сначала откройте SVG или DXF.")
                     return
                 code = generate_profile_gcode(self._polylines, self.params.to_profile_parameters())
+            else:
+                if not self._polylines:
+                    QMessageBox.information(self, "Нет данных", "Сначала откройте SVG или DXF.")
+                    return
+                code = generate_pocket_gcode(self._polylines, self.params.to_pocket_parameters())
         except ValueError as exc:
             QMessageBox.warning(self, "Параметры", str(exc))
             return
