@@ -104,6 +104,46 @@ def test_render_clears_previous_content(qapp: object) -> None:
     assert scene.items() == []
 
 
+def test_yaw_90_rotates_x_point_to_match_y_point_at_zero_yaw() -> None:
+    """Rotating the world 90° CCW maps a point on +X to where a point
+    on +Y would land at zero yaw."""
+    from leathercam.preview.toolpath_iso import project
+
+    rotated = project((10.0, 0.0, 0.0), yaw_deg=90.0)
+    reference = project((0.0, 10.0, 0.0))
+    assert rotated[0] == pytest.approx(reference[0], abs=1e-6)
+    assert rotated[1] == pytest.approx(reference[1], abs=1e-6)
+
+
+def test_yaw_180_reflects_through_origin_for_z_zero_points() -> None:
+    """A 180° yaw flips both X and Y axes; points at Z=0 reflect through
+    the screen origin."""
+    from leathercam.preview.toolpath_iso import project
+
+    a = project((5.0, 3.0, 0.0))
+    b = project((5.0, 3.0, 0.0), yaw_deg=180.0)
+    assert b[0] == pytest.approx(-a[0])
+    assert b[1] == pytest.approx(-a[1])
+
+
+def test_pitch_zero_makes_top_down_projection() -> None:
+    """At pitch=0 the projection collapses Y completely to screen X
+    (no vertical contribution from XY) — effectively top-down."""
+    from leathercam.preview.toolpath_iso import project
+
+    sx, sy = project((3.0, 7.0, 0.0), yaw_deg=0.0, pitch_deg=0.0)
+    assert sy == pytest.approx(0.0, abs=1e-6)
+    assert sx == pytest.approx(3.0 - 7.0)
+
+
+def test_pitch_90_makes_perfect_side_view() -> None:
+    """At pitch=90 the X and Y axes flatten to vertical screen Y."""
+    from leathercam.preview.toolpath_iso import project
+
+    sx, _ = project((5.0, 0.0, 0.0), yaw_deg=0.0, pitch_deg=90.0)
+    assert sx == pytest.approx(0.0, abs=1e-6)
+
+
 def test_zero_length_segment_is_skipped(qapp: object) -> None:
     from leathercam.preview import render_toolpath_iso
 

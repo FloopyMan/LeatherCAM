@@ -291,6 +291,65 @@ def test_loading_svg_populates_vector_size_fields(qapp: object, tmp_path: object
     assert window.params.reset_vector_size_button.isEnabled()
 
 
+def test_form_to_from_dict_round_trips(qapp: object) -> None:
+    from leathercam.ui.main_window import _Parameters
+
+    form = _Parameters()
+    form.depth.setValue(0.7)
+    form.feed_xy.setValue(1234.0)
+    form.vector_x.setValue(15.5)
+    form.mirror_x.setChecked(True)
+    snapshot = form.to_dict()
+
+    fresh = _Parameters()
+    fresh.from_dict(snapshot)
+    assert fresh.depth.value() == pytest.approx(0.7)
+    assert fresh.feed_xy.value() == 1234.0
+    assert fresh.vector_x.value() == pytest.approx(15.5)
+    assert fresh.mirror_x.isChecked()
+
+
+def test_save_then_load_project_restores_state(qapp: object, tmp_path: object) -> None:
+    from pathlib import Path
+
+    from PIL import Image as PILImage
+
+    from leathercam.ui.main_window import STRATEGY_RASTER, MainWindow
+
+    src = Path(str(tmp_path)) / "src.png"
+    PILImage.new("L", (16, 8), color=0).save(src)
+    window = MainWindow()
+    assert window._open_path(src)
+    window.params.set_strategy(STRATEGY_RASTER)
+    window.params.depth.setValue(0.9)
+    window.params.feed_xy.setValue(700.0)
+    window.params.invert.setChecked(True)
+
+    project_path = Path(str(tmp_path)) / "test.lcam"
+    # Simulate save by skipping the file dialog: assemble ProjectData manually.
+    from leathercam.project import ProjectData, save_project
+
+    save_project(
+        project_path,
+        ProjectData(
+            source_filename=src.name,
+            source_bytes=src.read_bytes(),
+            params=window.params.to_dict(),
+        ),
+    )
+    # Drop the original — proves the embedded source is what matters.
+    src.unlink()
+
+    fresh = MainWindow()
+    assert fresh._load_project_file(project_path)
+    assert fresh.params.depth.value() == pytest.approx(0.9)
+    assert fresh.params.feed_xy.value() == 700.0
+    assert fresh.params.invert.isChecked()
+    assert fresh.params.current_strategy() == STRATEGY_RASTER
+    # The unpacked source landed next to the .lcam file under its original name.
+    assert (project_path.parent / "src.png").exists()
+
+
 def test_view_mode_switch_redraws_scene(qapp: object, tmp_path: object) -> None:
     from pathlib import Path
 

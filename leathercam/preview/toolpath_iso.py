@@ -31,16 +31,37 @@ _RAPID_COLOR = QColor(180, 180, 180)
 _CUT_COLOR = QColor(220, 60, 60)
 _FRAME_COLOR = QColor(110, 110, 110)
 
-_COS_30 = math.cos(math.radians(30))
-_SIN_30 = math.sin(math.radians(30))
+DEFAULT_YAW_DEG = 0.0
+DEFAULT_PITCH_DEG = 30.0
 
 
-def project(point: tuple[float, float, float]) -> tuple[float, float]:
-    """Map a 3-D point in machine coordinates to a 2-D scene point."""
+def project(
+    point: tuple[float, float, float],
+    yaw_deg: float = DEFAULT_YAW_DEG,
+    pitch_deg: float = DEFAULT_PITCH_DEG,
+) -> tuple[float, float]:
+    """Map a 3-D point in machine coordinates to a 2-D scene point.
+
+    The projection is axonometric (orthographic) with two free parameters:
+
+    - yaw_deg rotates the (x, y) plane around the Z axis. Drag-rotation
+      in the UI updates this value.
+    - pitch_deg controls the vertical tilt — the angle the rotated X
+      and Y axes make below the screen horizon. At the default 30° the
+      view matches the original isometric look (axes at 30°/30° below
+      horizontal); larger values flatten toward top-down, smaller
+      values tilt closer to side-on.
+    """
     x, y, z = point
-    sx = x * _COS_30 - y * _COS_30
-    sy = -x * _SIN_30 - y * _SIN_30 + z
-    return (sx, sy)
+    cy = math.cos(math.radians(yaw_deg))
+    sy = math.sin(math.radians(yaw_deg))
+    rx = x * cy - y * sy
+    ry = x * sy + y * cy
+    cp = math.cos(math.radians(pitch_deg))
+    sp = math.sin(math.radians(pitch_deg))
+    sx = (rx - ry) * cp
+    sy_screen = -(rx + ry) * sp + z
+    return (sx, sy_screen)
 
 
 def render_toolpath_iso(
@@ -49,6 +70,8 @@ def render_toolpath_iso(
     raster_width_mm: float | None = None,
     raster_height_mm: float | None = None,
     raster_depth_mm: float | None = None,
+    yaw_deg: float = DEFAULT_YAW_DEG,
+    pitch_deg: float = DEFAULT_PITCH_DEG,
 ) -> None:
     """Clear the scene and draw an isometric projection of the toolpath.
 
@@ -59,7 +82,9 @@ def render_toolpath_iso(
     scene.clear()
 
     if raster_width_mm and raster_height_mm:
-        _draw_workpiece(scene, raster_width_mm, raster_height_mm, raster_depth_mm)
+        _draw_workpiece(
+            scene, raster_width_mm, raster_height_mm, raster_depth_mm, yaw_deg, pitch_deg
+        )
 
     rapid_pen = QPen(_RAPID_COLOR)
     rapid_pen.setStyle(rapid_pen.style().DashLine)
@@ -71,8 +96,8 @@ def render_toolpath_iso(
     prev: Move | None = None
     for move in moves:
         if prev is not None:
-            p0 = project((prev.x, prev.y, prev.z))
-            p1 = project((move.x, move.y, move.z))
+            p0 = project((prev.x, prev.y, prev.z), yaw_deg, pitch_deg)
+            p1 = project((move.x, move.y, move.z), yaw_deg, pitch_deg)
             if p0 != p1:
                 pen = rapid_pen if move.rapid else cut_pen
                 scene.addLine(QLineF(p0[0], p0[1], p1[0], p1[1]), pen)
@@ -84,25 +109,29 @@ def _draw_workpiece(
     w: float,
     h: float,
     depth: float | None,
+    yaw_deg: float,
+    pitch_deg: float,
 ) -> None:
     frame_pen = QPen(_FRAME_COLOR)
     frame_pen.setCosmetic(True)
     top = [(0.0, 0.0, 0.0), (w, 0.0, 0.0), (w, h, 0.0), (0.0, h, 0.0)]
-    _draw_loop(scene, top, frame_pen)
+    _draw_loop(scene, top, frame_pen, yaw_deg, pitch_deg)
     if depth and depth > 0:
         bottom = [(x, y, -depth) for (x, y, _) in top]
-        _draw_loop(scene, bottom, frame_pen)
+        _draw_loop(scene, bottom, frame_pen, yaw_deg, pitch_deg)
         for top_pt, bot_pt in zip(top, bottom, strict=True):
-            _draw_segment(scene, top_pt, bot_pt, frame_pen)
+            _draw_segment(scene, top_pt, bot_pt, frame_pen, yaw_deg, pitch_deg)
 
 
 def _draw_loop(
     scene: QGraphicsScene,
     pts: list[tuple[float, float, float]],
     pen: QPen,
+    yaw_deg: float,
+    pitch_deg: float,
 ) -> None:
     for i in range(len(pts)):
-        _draw_segment(scene, pts[i], pts[(i + 1) % len(pts)], pen)
+        _draw_segment(scene, pts[i], pts[(i + 1) % len(pts)], pen, yaw_deg, pitch_deg)
 
 
 def _draw_segment(
@@ -110,7 +139,9 @@ def _draw_segment(
     a: tuple[float, float, float],
     b: tuple[float, float, float],
     pen: QPen,
+    yaw_deg: float,
+    pitch_deg: float,
 ) -> None:
-    pa = project(a)
-    pb = project(b)
+    pa = project(a, yaw_deg, pitch_deg)
+    pb = project(b, yaw_deg, pitch_deg)
     scene.addLine(QLineF(pa[0], pa[1], pb[0], pb[1]), pen)

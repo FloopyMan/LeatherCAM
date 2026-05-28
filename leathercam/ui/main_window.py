@@ -62,6 +62,7 @@ from leathercam.job import (
 )
 from leathercam.preview import render_toolpath, render_toolpath_iso
 from leathercam.profiles import Material, Tool, load_materials, load_tools
+from leathercam.project import ProjectData, ProjectError, load_project, save_project
 from leathercam.ui.machine_dialog import MachineDialog
 from leathercam.ui.preview_view import PreviewView
 from leathercam.vector import (
@@ -380,6 +381,101 @@ class _Parameters(QWidget):
     def to_job_parameters(self) -> JobParameters:
         return self.to_raster_parameters()
 
+    # --- (de)serialization for the .lcam project file ---------------------
+
+    def to_dict(self) -> dict:
+        """Snapshot every widget value into a plain dict. Pairs with from_dict."""
+        return {
+            "strategy": self.current_strategy(),
+            "material_id": self.material_combo.currentData(),
+            "tool_id": self.tool_combo.currentData(),
+            # Image group
+            "target_width": float(self.target_width.value()),
+            "pixel_size": float(self.pixel_size.value()),
+            "threshold": int(self.threshold.value()),
+            "invert": bool(self.invert.isChecked()),
+            # Vector group
+            "tool_diameter": float(self.tool_diameter.value()),
+            "side": self.side.currentText(),
+            "step_over": float(self.step_over.value()),
+            "pocket_mode": self.pocket_mode.currentData(),
+            "workpiece_w": float(self.workpiece_w.value()),
+            "workpiece_h": float(self.workpiece_h.value()),
+            "vector_w": float(self.vector_w.value()),
+            "vector_h": float(self.vector_h.value()),
+            "vector_keep_aspect": bool(self.vector_keep_aspect.isChecked()),
+            "vector_x": float(self.vector_x.value()),
+            "vector_y": float(self.vector_y.value()),
+            # V-carve
+            "v_angle": float(self.v_angle.value()),
+            "v_max_depth": float(self.v_max_depth.value()),
+            # Cut
+            "depth": float(self.depth.value()),
+            "step_down": float(self.step_down.value()),
+            # Machine
+            "feed_xy": float(self.feed_xy.value()),
+            "feed_z": float(self.feed_z.value()),
+            "spindle_rpm": int(self.spindle_rpm.value()),
+            "safe_z": float(self.safe_z.value()),
+            "mirror_x": bool(self.mirror_x.isChecked()),
+        }
+
+    def from_dict(self, data: dict) -> None:
+        """Restore every widget value from a dict produced by to_dict()."""
+
+        def _set_combo_by_data(combo, value) -> None:
+            for i in range(combo.count()):
+                if combo.itemData(i) == value:
+                    combo.setCurrentIndex(i)
+                    return
+
+        def _set_combo_by_text(combo, value) -> None:
+            idx = combo.findText(value)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+
+        if "strategy" in data:
+            self.set_strategy(data["strategy"])
+        if "material_id" in data:
+            _set_combo_by_data(self.material_combo, data["material_id"])
+        if "tool_id" in data:
+            _set_combo_by_data(self.tool_combo, data["tool_id"])
+
+        for key, widget in (
+            ("target_width", self.target_width),
+            ("pixel_size", self.pixel_size),
+            ("threshold", self.threshold),
+            ("tool_diameter", self.tool_diameter),
+            ("step_over", self.step_over),
+            ("workpiece_w", self.workpiece_w),
+            ("workpiece_h", self.workpiece_h),
+            ("vector_w", self.vector_w),
+            ("vector_h", self.vector_h),
+            ("vector_x", self.vector_x),
+            ("vector_y", self.vector_y),
+            ("v_angle", self.v_angle),
+            ("v_max_depth", self.v_max_depth),
+            ("depth", self.depth),
+            ("step_down", self.step_down),
+            ("feed_xy", self.feed_xy),
+            ("feed_z", self.feed_z),
+            ("spindle_rpm", self.spindle_rpm),
+            ("safe_z", self.safe_z),
+        ):
+            if key in data:
+                widget.setValue(data[key])
+
+        if "invert" in data:
+            self.invert.setChecked(bool(data["invert"]))
+        if "vector_keep_aspect" in data:
+            self.vector_keep_aspect.setChecked(bool(data["vector_keep_aspect"]))
+        if "mirror_x" in data:
+            self.mirror_x.setChecked(bool(data["mirror_x"]))
+        if "side" in data:
+            _set_combo_by_text(self.side, data["side"])
+        if "pocket_mode" in data:
+            _set_combo_by_data(self.pocket_mode, data["pocket_mode"])
+
     def _on_apply_recommended(self) -> None:
         material_id = self.material_combo.currentData()
         tool_id = self.tool_combo.currentData()
@@ -419,27 +515,30 @@ class MainWindow(QMainWindow):
         self.view.scale(1.0, -1.0)
 
         self._view_mode = VIEW_TOP
+        self._iso_yaw = 0.0
+        self._iso_pitch = 30.0
         self.view_top_radio = QRadioButton("2D сверху")
-        self.view_iso_radio = QRadioButton("Изометрия")
+        self.view_iso_radio = QRadioButton("3D (изометрия)")
         self.view_top_radio.setChecked(True)
         view_group = QButtonGroup(self)
         view_group.addButton(self.view_top_radio)
         view_group.addButton(self.view_iso_radio)
         self.view_top_radio.toggled.connect(self._on_view_mode_changed)
         self.view_iso_radio.toggled.connect(self._on_view_mode_changed)
-        self.reset_zoom_button = QPushButton("Сбросить зум")
-        self.reset_zoom_button.clicked.connect(self.view.reset_zoom)
+        self.reset_view_button = QPushButton("Сбросить вид")
+        self.reset_view_button.clicked.connect(self._on_reset_view)
+        self.view.rotated.connect(self._on_view_rotated)
         view_row = QHBoxLayout()
         view_row.addWidget(QLabel("Вид:"))
         view_row.addWidget(self.view_top_radio)
         view_row.addWidget(self.view_iso_radio)
         view_row.addStretch(1)
-        view_row.addWidget(self.reset_zoom_button)
+        view_row.addWidget(self.reset_view_button)
 
         self.status_label = QLabel(
             "Откройте изображение или вектор для начала. "
-            "Колесо мыши — зум, средняя кнопка (или Shift+ЛКМ) — панорамирование, "
-            "двойной клик — вписать в окно."
+            "Колесо — зум, средняя кнопка (или Shift+ЛКМ) — пан, "
+            "ЛКМ в 3D-режиме — вращение, двойной клик — вписать в окно."
         )
         self.status_label.setWordWrap(True)
         self.bounds_label = QLabel("")
@@ -507,6 +606,16 @@ class MainWindow(QMainWindow):
         open_vec.setShortcut("Ctrl+Shift+O")
         open_vec.triggered.connect(self._on_open_vector)
         file_menu.addAction(open_vec)
+
+        open_project = QAction("Открыть &проект (*.lcam)…", self)
+        open_project.setShortcut("Ctrl+Alt+O")
+        open_project.triggered.connect(self._on_open_project)
+        file_menu.addAction(open_project)
+
+        save_project_action = QAction("Сохранить &проект (*.lcam)…", self)
+        save_project_action.setShortcut("Ctrl+Alt+S")
+        save_project_action.triggered.connect(self._on_save_project)
+        file_menu.addAction(save_project_action)
 
         file_menu.addSeparator()
 
@@ -577,6 +686,7 @@ class MainWindow(QMainWindow):
 
     _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".bmp")
     _VECTOR_EXTS = (".svg", ".dxf")
+    _PROJECT_EXTS = (".lcam",)
 
     def _on_open_image(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(
@@ -598,12 +708,90 @@ class MainWindow(QMainWindow):
         if path_str:
             self._open_path(Path(path_str))
 
+    def _on_open_project(self) -> None:
+        path_str, _ = QFileDialog.getOpenFileName(
+            self,
+            "Открыть проект",
+            "",
+            "LeatherCAM проект (*.lcam);;Все файлы (*)",
+        )
+        if path_str:
+            self._open_path(Path(path_str))
+
+    def _on_save_project(self) -> None:
+        if self._image is None and not self._polylines:
+            QMessageBox.information(self, "Нет данных", "Сначала откройте файл-источник.")
+            return
+        if self._source_path is None or not self._source_path.exists():
+            QMessageBox.warning(
+                self,
+                "Нет исходника",
+                "Не нашёлся файл-источник на диске — нечего вкладывать в проект.",
+            )
+            return
+        try:
+            source_bytes = self._source_path.read_bytes()
+        except OSError as exc:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось прочитать исходник: {exc}")
+            return
+        default_name = self._source_path.stem + ".lcam"
+        path_str, _ = QFileDialog.getSaveFileName(
+            self,
+            "Сохранить проект",
+            default_name,
+            "LeatherCAM проект (*.lcam);;Все файлы (*)",
+        )
+        if not path_str:
+            return
+        project = ProjectData(
+            source_filename=self._source_path.name,
+            source_bytes=source_bytes,
+            params=self.params.to_dict(),
+        )
+        try:
+            save_project(path_str, project)
+        except OSError as exc:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить: {exc}")
+            return
+        self.status_label.setText(f"Проект сохранён: {path_str}")
+
+    def _load_project_file(self, path: Path) -> bool:
+        try:
+            project = load_project(path)
+        except (OSError, ProjectError) as exc:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось открыть проект: {exc}")
+            return False
+        # Drop the embedded source next to the project file under its original
+        # name. Re-using the user's file name keeps recent-files / status text
+        # readable, and the on-disk copy lets the standard image / vector
+        # loaders run without any special-casing.
+        target_dir = path.parent
+        target_path = target_dir / project.source_filename
+        try:
+            target_path.write_bytes(project.source_bytes)
+        except OSError as exc:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось распаковать исходник: {exc}")
+            return False
+        # Load the source through the normal _open_path so everything (bbox,
+        # vector-size fields, status text, recents) updates as if the user
+        # had opened it manually.
+        if not self._open_path(target_path):
+            return False
+        # Now apply the saved parameters; the loader above will have set
+        # default vector_w/h from the bbox, so this overwrites them.
+        self.params.from_dict(project.params)
+        self._on_preview()
+        self.status_label.setText(f"Проект открыт: {path.name}")
+        return True
+
     def _open_path(self, path: Path) -> bool:
         suffix = path.suffix.lower()
         if suffix in self._IMAGE_EXTS:
             return self._load_image(path)
         if suffix in self._VECTOR_EXTS:
             return self._load_vector(path)
+        if suffix in self._PROJECT_EXTS:
+            return self._load_project_file(path)
         QMessageBox.warning(self, "Неизвестный формат", f"Расширение {suffix!r} не поддержано")
         return False
 
@@ -778,6 +966,8 @@ class MainWindow(QMainWindow):
                 raster_width_mm=w,
                 raster_height_mm=h,
                 raster_depth_mm=depth,
+                yaw_deg=self._iso_yaw,
+                pitch_deg=self._iso_pitch,
             )
         else:
             render_toolpath(self.scene, moves, raster_width_mm=w, raster_height_mm=h)
@@ -792,12 +982,37 @@ class MainWindow(QMainWindow):
         self.view.resetTransform()
         if self._view_mode == VIEW_TOP:
             self.view.scale(1.0, -1.0)
+        self.view.rotation_enabled = self._view_mode == VIEW_ISO
         if not self._last_moves:
             return
         w = self._last_workpiece[0] if self._last_workpiece else None
         h = self._last_workpiece[1] if self._last_workpiece else None
         self._render_scene(self._last_moves, w, h)
         self.view.fit_scene()
+
+    def _on_view_rotated(self, dx: int, dy: int) -> None:
+        """Left-drag in iso mode → adjust yaw (dx) and pitch (dy)."""
+        if self._view_mode != VIEW_ISO or not self._last_moves:
+            return
+        # Sensitivity: 0.5°/pixel feels close to most 3-D viewers.
+        self._iso_yaw = (self._iso_yaw + dx * 0.5) % 360.0
+        new_pitch = self._iso_pitch + dy * 0.5
+        # Clamp pitch to a comfortable range; below 0 the model flips
+        # upside-down, above 89° it collapses to a horizon line.
+        self._iso_pitch = max(0.0, min(89.0, new_pitch))
+        w = self._last_workpiece[0] if self._last_workpiece else None
+        h = self._last_workpiece[1] if self._last_workpiece else None
+        self._render_scene(self._last_moves, w, h)
+
+    def _on_reset_view(self) -> None:
+        self._iso_yaw = 0.0
+        self._iso_pitch = 30.0
+        self.view.reset_zoom()
+        if self._last_moves:
+            w = self._last_workpiece[0] if self._last_workpiece else None
+            h = self._last_workpiece[1] if self._last_workpiece else None
+            self._render_scene(self._last_moves, w, h)
+            self.view.fit_scene()
 
     def _on_scrub(self, value: int) -> None:
         if not self._last_moves:
