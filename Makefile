@@ -1,4 +1,5 @@
-PYTHON ?= python3
+VENV ?= .venv
+PYTHON ?= $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 
 .PHONY: help run test test-headless lint format check dev-install clean
 
