@@ -27,10 +27,12 @@ from PySide6.QtWidgets import (
     QGraphicsScene,
     QGraphicsView,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSlider,
     QSpinBox,
     QSplitter,
     QStatusBar,
@@ -38,6 +40,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from leathercam.cam import bounding_box, estimate_duration_minutes, exceeds_bounds
+from leathercam.gcode import Move
 from leathercam.job import (
     JobParameters,
     PocketJobParameters,
@@ -297,6 +301,8 @@ class MainWindow(QMainWindow):
         self._image: Image.Image | None = None
         self._polylines: list[Polyline] = []
         self._source_path: Path | None = None
+        self._last_moves: list[Move] = []
+        self._last_workpiece: tuple[float, float] | None = None
 
         self.params = _Parameters()
         self.scene = QGraphicsScene(self)
@@ -306,6 +312,18 @@ class MainWindow(QMainWindow):
         self.view.scale(1.0, -1.0)
 
         self.status_label = QLabel("Откройте изображение или вектор для начала.")
+        self.bounds_label = QLabel("")
+        self.bounds_label.setStyleSheet("color: #b04040;")
+        self.time_label = QLabel("")
+        self.scrub_label = QLabel("Просмотр траектории:")
+        self.scrub_slider = QSlider(Qt.Orientation.Horizontal)
+        self.scrub_slider.setRange(0, 0)
+        self.scrub_slider.setEnabled(False)
+        self.scrub_slider.valueChanged.connect(self._on_scrub)
+        scrub_row = QHBoxLayout()
+        scrub_row.addWidget(self.scrub_label)
+        scrub_row.addWidget(self.scrub_slider, stretch=1)
+
         self.preview_button = QPushButton("Обновить предпросмотр")
         self.preview_button.clicked.connect(self._on_preview)
         self.generate_button = QPushButton("Сгенерировать G-code…")
@@ -317,9 +335,12 @@ class MainWindow(QMainWindow):
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(8, 8, 8, 8)
         right_layout.addWidget(self.view, stretch=1)
+        right_layout.addLayout(scrub_row)
         right_layout.addWidget(self.preview_button)
         right_layout.addWidget(self.generate_button)
         right_layout.addWidget(self.status_label)
+        right_layout.addWidget(self.time_label)
+        right_layout.addWidget(self.bounds_label)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self.params)
@@ -489,9 +510,54 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Параметры", str(exc))
             return
 
+        self._last_moves = moves
+        self._last_workpiece = (w, h) if (w is not None and h is not None) else None
+        self.scrub_slider.setRange(0, len(moves))
+        self.scrub_slider.setEnabled(len(moves) > 0)
+        self.scrub_slider.blockSignals(True)
+        self.scrub_slider.setValue(len(moves))
+        self.scrub_slider.blockSignals(False)
+
         render_toolpath(self.scene, moves, raster_width_mm=w, raster_height_mm=h)
         self.view.fitInView(self.scene.itemsBoundingRect(), Qt.AspectRatioMode.KeepAspectRatio)
         self.status_label.setText(f"Сегментов траектории: {len(moves)}; {size_text}")
+        self._update_metrics()
+
+    def _on_scrub(self, value: int) -> None:
+        if not self._last_moves:
+            return
+        subset = self._last_moves[: max(0, value)]
+        if self._last_workpiece is not None:
+            w, h = self._last_workpiece
+            render_toolpath(self.scene, subset, raster_width_mm=w, raster_height_mm=h)
+        else:
+            render_toolpath(self.scene, subset)
+
+    def _update_metrics(self) -> None:
+        if not self._last_moves:
+            self.time_label.setText("")
+            self.bounds_label.setText("")
+            return
+        feed_xy = float(self.params.feed_xy.value())
+        feed_z = float(self.params.feed_z.value())
+        safe_z = float(self.params.safe_z.value())
+        minutes = estimate_duration_minutes(self._last_moves, feed_xy=feed_xy, feed_z=feed_z)
+        mm, ss = divmod(round(minutes * 60.0), 60)
+        hh, mm = divmod(mm, 60)
+        time_str = f"{hh}:{mm:02d}:{ss:02d}" if hh > 0 else f"{mm}:{ss:02d}"
+        bbox = bounding_box(self._last_moves)
+        if bbox is None:
+            self.time_label.setText("")
+            self.bounds_label.setText("")
+            return
+        self.time_label.setText(
+            f"Оценка времени: {time_str}; bbox: "
+            f"X[{bbox.min_x:.1f}…{bbox.max_x:.1f}] "
+            f"Y[{bbox.min_y:.1f}…{bbox.max_y:.1f}] "
+            f"Z[{bbox.min_z:.2f}…{bbox.max_z:.2f}]"
+        )
+        warnings = exceeds_bounds(bbox, safe_z=safe_z)
+        self.bounds_label.setText("Внимание: " + "; ".join(warnings) if warnings else "")
 
     def _on_generate(self) -> None:
         strategy = self.params.current_strategy()
