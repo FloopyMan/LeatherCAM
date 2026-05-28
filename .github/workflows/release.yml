@@ -6,6 +6,12 @@ on:
       - "v*"
   workflow_dispatch:
 
+# Opt every JS action into Node.js 24 so the deprecation warning about
+# Node 20 goes away. actions/checkout@v4 and actions/setup-python@v5
+# both still work fine on Node 24; this just flips their runtime.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   linux-appimage:
     # ubuntu-22.04 still ships libfuse2 in apt; 24.04 dropped it.
