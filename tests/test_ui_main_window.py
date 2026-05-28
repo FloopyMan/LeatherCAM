@@ -291,6 +291,54 @@ def test_loading_svg_populates_vector_size_fields(qapp: object, tmp_path: object
     assert window.params.reset_vector_size_button.isEnabled()
 
 
+def test_view_mode_switch_redraws_scene(qapp: object, tmp_path: object) -> None:
+    from pathlib import Path
+
+    from PIL import Image as PILImage
+
+    from leathercam.ui.main_window import VIEW_ISO, VIEW_TOP, MainWindow
+
+    img_path = Path(str(tmp_path)) / "x.png"
+    PILImage.new("L", (8, 4), color=0).save(img_path)
+    window = MainWindow()
+    assert window._open_path(img_path)
+    assert window._view_mode == VIEW_TOP
+    initial_items = len(window.scene.items())
+
+    window.view_iso_radio.setChecked(True)
+    assert window._view_mode == VIEW_ISO
+    # The scene was re-rendered; line items still exist.
+    assert window.scene.items()
+    window.view_top_radio.setChecked(True)
+    assert window._view_mode == VIEW_TOP
+    # And we can still toggle back without errors.
+    assert window.scene.items() or initial_items == 0
+
+
+def test_preview_view_zoom_wheel_changes_transform(qapp: object) -> None:
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtGui import QWheelEvent
+
+    from leathercam.ui.preview_view import PreviewView
+
+    view = PreviewView()
+    view.resize(200, 200)
+    before = view.transform().m11()
+    event = QWheelEvent(
+        QPoint(100, 100),
+        view.mapToGlobal(QPoint(100, 100)),
+        QPoint(0, 0),
+        QPoint(0, 120),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+        Qt.ScrollPhase.NoScrollPhase,
+        False,
+    )
+    view.wheelEvent(event)
+    after = view.transform().m11()
+    assert after > before
+
+
 def test_saved_gcode_matches_preview_after_resize_and_position(
     qapp: object, tmp_path: object
 ) -> None:

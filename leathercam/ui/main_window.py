@@ -18,21 +18,22 @@ from typing import Any
 
 from PIL import Image
 from PySide6.QtCore import QSettings, Qt
-from PySide6.QtGui import QAction, QPainter, QPalette
+from PySide6.QtGui import QAction, QPalette
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QGraphicsScene,
-    QGraphicsView,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QScrollArea,
     QSlider,
     QSpinBox,
@@ -59,9 +60,10 @@ from leathercam.job import (
     generate_profile_gcode,
     generate_vcarve_gcode,
 )
-from leathercam.preview import render_toolpath
+from leathercam.preview import render_toolpath, render_toolpath_iso
 from leathercam.profiles import Material, Tool, load_materials, load_tools
 from leathercam.ui.machine_dialog import MachineDialog
+from leathercam.ui.preview_view import PreviewView
 from leathercam.vector import (
     Polyline,
     fit_polylines,
@@ -83,6 +85,9 @@ THEME_DARK = "dark"
 THEME_SYSTEM = "system"
 
 MAX_RECENT_FILES = 5
+
+VIEW_TOP = "top"
+VIEW_ISO = "iso"
 
 _DARK_STYLESHEET = """
 QWidget { background-color: #2b2b2b; color: #e0e0e0; }
@@ -409,12 +414,34 @@ class MainWindow(QMainWindow):
 
         self.params = _Parameters()
         self.scene = QGraphicsScene(self)
-        self.view = QGraphicsView(self.scene, self)
-        self.view.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self.view = PreviewView(self.scene, self)
         self.view.setBackgroundBrush(Qt.GlobalColor.white)
         self.view.scale(1.0, -1.0)
 
-        self.status_label = QLabel("Откройте изображение или вектор для начала.")
+        self._view_mode = VIEW_TOP
+        self.view_top_radio = QRadioButton("2D сверху")
+        self.view_iso_radio = QRadioButton("Изометрия")
+        self.view_top_radio.setChecked(True)
+        view_group = QButtonGroup(self)
+        view_group.addButton(self.view_top_radio)
+        view_group.addButton(self.view_iso_radio)
+        self.view_top_radio.toggled.connect(self._on_view_mode_changed)
+        self.view_iso_radio.toggled.connect(self._on_view_mode_changed)
+        self.reset_zoom_button = QPushButton("Сбросить зум")
+        self.reset_zoom_button.clicked.connect(self.view.reset_zoom)
+        view_row = QHBoxLayout()
+        view_row.addWidget(QLabel("Вид:"))
+        view_row.addWidget(self.view_top_radio)
+        view_row.addWidget(self.view_iso_radio)
+        view_row.addStretch(1)
+        view_row.addWidget(self.reset_zoom_button)
+
+        self.status_label = QLabel(
+            "Откройте изображение или вектор для начала. "
+            "Колесо мыши — зум, средняя кнопка (или Shift+ЛКМ) — панорамирование, "
+            "двойной клик — вписать в окно."
+        )
+        self.status_label.setWordWrap(True)
         self.bounds_label = QLabel("")
         self.bounds_label.setStyleSheet("color: #b04040;")
         self.time_label = QLabel("")
@@ -437,6 +464,7 @@ class MainWindow(QMainWindow):
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(8, 8, 8, 8)
+        right_layout.addLayout(view_row)
         right_layout.addWidget(self.view, stretch=1)
         right_layout.addLayout(scrub_row)
         right_layout.addWidget(self.preview_button)
@@ -730,20 +758,54 @@ class MainWindow(QMainWindow):
         self.scrub_slider.setValue(len(moves))
         self.scrub_slider.blockSignals(False)
 
-        render_toolpath(self.scene, moves, raster_width_mm=w, raster_height_mm=h)
-        self.view.fitInView(self.scene.itemsBoundingRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        self._render_scene(moves, w, h)
+        self.view.fit_scene()
         self.status_label.setText(f"Сегментов траектории: {len(moves)}; {size_text}")
         self._update_metrics()
+
+    def _render_scene(self, moves, w: float | None, h: float | None) -> None:
+        """Dispatch to the active renderer (2-D top-down or isometric)."""
+        if self._view_mode == VIEW_ISO:
+            depth = None
+            if self._last_moves:
+                zs = [m.z for m in self._last_moves]
+                deepest = min(zs)
+                if deepest < 0:
+                    depth = -deepest
+            render_toolpath_iso(
+                self.scene,
+                moves,
+                raster_width_mm=w,
+                raster_height_mm=h,
+                raster_depth_mm=depth,
+            )
+        else:
+            render_toolpath(self.scene, moves, raster_width_mm=w, raster_height_mm=h)
+
+    def _on_view_mode_changed(self) -> None:
+        new_mode = VIEW_ISO if self.view_iso_radio.isChecked() else VIEW_TOP
+        if new_mode == self._view_mode:
+            return
+        self._view_mode = new_mode
+        # Drop the Y-flip in iso mode — iso projection handles axis
+        # orientation itself, machine Z must point up on screen.
+        self.view.resetTransform()
+        if self._view_mode == VIEW_TOP:
+            self.view.scale(1.0, -1.0)
+        if not self._last_moves:
+            return
+        w = self._last_workpiece[0] if self._last_workpiece else None
+        h = self._last_workpiece[1] if self._last_workpiece else None
+        self._render_scene(self._last_moves, w, h)
+        self.view.fit_scene()
 
     def _on_scrub(self, value: int) -> None:
         if not self._last_moves:
             return
         subset = self._last_moves[: max(0, value)]
-        if self._last_workpiece is not None:
-            w, h = self._last_workpiece
-            render_toolpath(self.scene, subset, raster_width_mm=w, raster_height_mm=h)
-        else:
-            render_toolpath(self.scene, subset)
+        w = self._last_workpiece[0] if self._last_workpiece else None
+        h = self._last_workpiece[1] if self._last_workpiece else None
+        self._render_scene(subset, w, h)
 
     def _update_metrics(self) -> None:
         if not self._last_moves:
