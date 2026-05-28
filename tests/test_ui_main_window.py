@@ -101,3 +101,46 @@ def test_pocket_parameters_round_trip(qapp: object) -> None:
     params = form.to_pocket_parameters()
     assert isinstance(params, PocketJobParameters)
     assert params.step_over_mm > 0
+
+
+def test_apply_recommended_populates_machine_fields(qapp: object) -> None:
+    from leathercam.ui.main_window import _Parameters
+
+    form = _Parameters()
+    for i in range(form.material_combo.count()):
+        if form.material_combo.itemData(i) == "linden":
+            form.material_combo.setCurrentIndex(i)
+            break
+    for i in range(form.tool_combo.count()):
+        if form.tool_combo.itemData(i) == "flat_1mm":
+            form.tool_combo.setCurrentIndex(i)
+            break
+
+    form.feed_xy.setValue(1.0)
+    form.feed_z.setValue(1.0)
+    form.spindle_rpm.setValue(1000)
+    form.step_down.setValue(0.1)
+    form._on_apply_recommended()
+
+    assert form.feed_xy.value() == 500
+    assert form.feed_z.value() == 150
+    assert form.spindle_rpm.value() == 10000
+    assert form.step_down.value() == pytest.approx(0.3)
+    assert form.tool_diameter.value() == pytest.approx(1.0)
+
+
+def test_apply_recommended_sets_v_angle_for_vbit(qapp: object) -> None:
+    from leathercam.ui.main_window import _Parameters
+
+    form = _Parameters()
+    for i in range(form.material_combo.count()):
+        if form.material_combo.itemData(i) == "linden":
+            form.material_combo.setCurrentIndex(i)
+            break
+    for i in range(form.tool_combo.count()):
+        if form.tool_combo.itemData(i) == "vbit_60":
+            form.tool_combo.setCurrentIndex(i)
+            break
+    form.v_angle.setValue(45.0)
+    form._on_apply_recommended()
+    assert form.v_angle.value() == pytest.approx(60.0)

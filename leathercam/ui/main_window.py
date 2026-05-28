@@ -54,6 +54,7 @@ from leathercam.job import (
     generate_vcarve_gcode,
 )
 from leathercam.preview import render_toolpath
+from leathercam.profiles import Material, Tool, load_materials, load_tools
 from leathercam.vector import Polyline, load_dxf, load_svg
 
 logger = logging.getLogger(__name__)
@@ -81,6 +82,22 @@ class _Parameters(QWidget):
         self.strategy.addItem("V-carve (PNG/JPG, V-фреза)", STRATEGY_VCARVE)
         self.strategy.currentIndexChanged.connect(self._sync_visibility)
         strategy_form.addRow("Тип:", self.strategy)
+
+        profile_box = QGroupBox("Профиль материала и фрезы")
+        profile_form = QFormLayout(profile_box)
+        self._materials: list[Material] = load_materials()
+        self._tools: list[Tool] = load_tools()
+        self.material_combo = QComboBox()
+        for material in self._materials:
+            self.material_combo.addItem(material.name, material.id)
+        self.tool_combo = QComboBox()
+        for tool in self._tools:
+            self.tool_combo.addItem(tool.name, tool.id)
+        self.apply_recommended = QPushButton("Применить рекомендованные параметры")
+        self.apply_recommended.clicked.connect(self._on_apply_recommended)
+        profile_form.addRow("Материал:", self.material_combo)
+        profile_form.addRow("Фреза:", self.tool_combo)
+        profile_form.addRow(self.apply_recommended)
 
         self.image_box = QGroupBox("Изображение")
         image_form = QFormLayout(self.image_box)
@@ -134,6 +151,7 @@ class _Parameters(QWidget):
         stamp_form.addRow(self.mirror_x)
 
         layout.addWidget(strategy_box)
+        layout.addWidget(profile_box)
         layout.addWidget(self.image_box)
         layout.addWidget(self.vector_box)
         layout.addWidget(self.vcarve_box)
@@ -236,6 +254,25 @@ class _Parameters(QWidget):
     # Back-compat for stage 1 tests.
     def to_job_parameters(self) -> JobParameters:
         return self.to_raster_parameters()
+
+    def _on_apply_recommended(self) -> None:
+        material_id = self.material_combo.currentData()
+        tool_id = self.tool_combo.currentData()
+        material = next((m for m in self._materials if m.id == material_id), None)
+        tool = next((t for t in self._tools if t.id == tool_id), None)
+        if material is None or tool is None:
+            return
+        if tool.kind != "vbit":
+            self.tool_diameter.setValue(tool.diameter_mm)
+        if tool.kind == "vbit" and tool.angle_deg is not None:
+            self.v_angle.setValue(tool.angle_deg)
+        rec = material.recommendation_for(tool.id)
+        if rec is None:
+            return
+        self.feed_xy.setValue(rec.feed_xy)
+        self.feed_z.setValue(rec.feed_z)
+        self.spindle_rpm.setValue(rec.spindle_rpm)
+        self.step_down.setValue(rec.step_down_mm)
 
 
 class MainWindow(QMainWindow):
