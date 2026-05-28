@@ -1,7 +1,7 @@
 VENV ?= .venv
 PYTHON ?= $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 
-.PHONY: help run test test-headless lint format check dev-install clean
+.PHONY: help run test test-headless lint format check dev-install dist-install build appimage clean
 
 help:
 	@echo "LeatherCAM — common targets:"
@@ -12,6 +12,9 @@ help:
 	@echo "  make format       — ruff format ."
 	@echo "  make check        — lint + format check + headless tests"
 	@echo "  make dev-install  — create .venv (with system-site-packages) and install -e .[dev]"
+	@echo "  make dist-install — install the [dist] extra (PyInstaller) into .venv"
+	@echo "  make build        — PyInstaller onedir build into dist/leathercam/"
+	@echo "  make appimage     — wrap dist/leathercam/ into a Linux AppImage (needs appimagetool)"
 	@echo "  make clean        — remove caches and build artifacts"
 
 run:
@@ -42,6 +45,17 @@ dev-install: .venv
 	.venv/bin/python -m pip install -e ".[dev]"
 	@echo
 	@echo "Done. Activate with:  source .venv/bin/activate"
+
+dist-install: .venv
+	.venv/bin/python -m pip install ".[dist]"
+
+build:
+	$(PYTHON) -m PyInstaller --noconfirm packaging/leathercam.spec
+	@echo
+	@echo "Built dist/leathercam/. Launch: ./dist/leathercam/leathercam"
+
+appimage:
+	bash packaging/build-appimage.sh
 
 clean:
 	rm -rf build dist *.egg-info .pytest_cache .ruff_cache .mypy_cache

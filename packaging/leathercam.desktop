@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=LeatherCAM
+GenericName=CNC CAM for leather embossing clichés
+Comment=Generate G-code for CNC 3018 (GRBL) from images and vectors
+Exec=leathercam %F
+Icon=leathercam
+Terminal=false
+Categories=Graphics;Engineering;
+MimeType=image/png;image/jpeg;image/bmp;image/svg+xml;application/dxf;
+StartupNotify=true
+StartupWMClass=LeatherCAM
