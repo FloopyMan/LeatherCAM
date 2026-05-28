@@ -61,7 +61,7 @@ from leathercam.job import (
 from leathercam.preview import render_toolpath
 from leathercam.profiles import Material, Tool, load_materials, load_tools
 from leathercam.ui.machine_dialog import MachineDialog
-from leathercam.vector import Polyline, load_dxf, load_svg
+from leathercam.vector import Polyline, fit_polylines, load_dxf, load_svg, polylines_bbox
 
 logger = logging.getLogger(__name__)
 
@@ -153,12 +153,29 @@ class _Parameters(QWidget):
         self.pocket_mode.addItem("Карман: фрезеровать фон (оставить рисунок)", "background")
         self.workpiece_w = self._double(1.0, 500.0, 60.0, 1.0, " мм")
         self.workpiece_h = self._double(1.0, 500.0, 40.0, 1.0, " мм")
+        self.vector_w = self._double(0.1, 500.0, 50.0, 0.5, " мм")
+        self.vector_h = self._double(0.1, 500.0, 30.0, 0.5, " мм")
+        self.vector_keep_aspect = QCheckBox("Сохранять пропорции")
+        self.vector_keep_aspect.setChecked(True)
+        self.vector_w.valueChanged.connect(self._on_vector_width_changed)
+        self.vector_h.valueChanged.connect(self._on_vector_height_changed)
+        self._vector_aspect: float | None = None
+        self._orig_vector_w: float | None = None
+        self._orig_vector_h: float | None = None
+        self._suppress_size_signal = False
+        self.reset_vector_size_button = QPushButton("Сбросить к исходному")
+        self.reset_vector_size_button.clicked.connect(self._on_reset_vector_size)
+        self.reset_vector_size_button.setEnabled(False)
         vector_form.addRow("Диаметр фрезы:", self.tool_diameter)
         vector_form.addRow("Сторона (Profile):", self.side)
         vector_form.addRow("Шаг (step-over, Pocket):", self.step_over)
         vector_form.addRow("Режим (Pocket):", self.pocket_mode)
         vector_form.addRow("Размер клише, ширина:", self.workpiece_w)
         vector_form.addRow("Размер клише, высота:", self.workpiece_h)
+        vector_form.addRow("Размер рисунка, ширина:", self.vector_w)
+        vector_form.addRow("Размер рисунка, высота:", self.vector_h)
+        vector_form.addRow(self.vector_keep_aspect)
+        vector_form.addRow(self.reset_vector_size_button)
 
         self.vcarve_box = QGroupBox("V-carve")
         vcarve_form = QFormLayout(self.vcarve_box)
@@ -224,6 +241,48 @@ class _Parameters(QWidget):
         self.image_box.setVisible(strategy in (STRATEGY_RASTER, STRATEGY_VCARVE))
         self.vector_box.setVisible(strategy in (STRATEGY_PROFILE, STRATEGY_POCKET))
         self.vcarve_box.setVisible(strategy == STRATEGY_VCARVE)
+
+    def set_original_vector_size(self, width_mm: float, height_mm: float) -> None:
+        """Called after loading a vector file — pre-fills the size fields."""
+        if width_mm <= 0 or height_mm <= 0:
+            return
+        self._orig_vector_w = width_mm
+        self._orig_vector_h = height_mm
+        self._vector_aspect = width_mm / height_mm
+        self._suppress_size_signal = True
+        self.vector_w.setValue(width_mm)
+        self.vector_h.setValue(height_mm)
+        self._suppress_size_signal = False
+        self.reset_vector_size_button.setEnabled(True)
+
+    def clear_original_vector_size(self) -> None:
+        self._orig_vector_w = None
+        self._orig_vector_h = None
+        self._vector_aspect = None
+        self.reset_vector_size_button.setEnabled(False)
+
+    def _on_vector_width_changed(self, value: float) -> None:
+        if self._suppress_size_signal or not self.vector_keep_aspect.isChecked():
+            return
+        if self._vector_aspect is None or self._vector_aspect <= 0:
+            return
+        self._suppress_size_signal = True
+        self.vector_h.setValue(value / self._vector_aspect)
+        self._suppress_size_signal = False
+
+    def _on_vector_height_changed(self, value: float) -> None:
+        if self._suppress_size_signal or not self.vector_keep_aspect.isChecked():
+            return
+        if self._vector_aspect is None or self._vector_aspect <= 0:
+            return
+        self._suppress_size_signal = True
+        self.vector_w.setValue(value * self._vector_aspect)
+        self._suppress_size_signal = False
+
+    def _on_reset_vector_size(self) -> None:
+        if self._orig_vector_w is None or self._orig_vector_h is None:
+            return
+        self.set_original_vector_size(self._orig_vector_w, self._orig_vector_h)
 
     def current_strategy(self) -> str:
         return str(self.strategy.currentData())
@@ -533,6 +592,9 @@ class MainWindow(QMainWindow):
         self._image = None
         self._polylines = polylines
         self._source_path = path
+        bbox = polylines_bbox(polylines)
+        if bbox is not None:
+            self.params.set_original_vector_size(bbox[2] - bbox[0], bbox[3] - bbox[1])
         self.params.set_strategy(STRATEGY_PROFILE)
         self.status_label.setText(f"Загружено: {path.name} ({len(polylines)} полилиний)")
         self.preview_button.setEnabled(True)
@@ -540,6 +602,23 @@ class MainWindow(QMainWindow):
         self._on_preview()
         self._remember_recent(path)
         return True
+
+    def _scaled_polylines(self) -> list[Polyline]:
+        """Apply the form's vector-size settings to self._polylines."""
+        if not self._polylines:
+            return []
+        target_w = float(self.params.vector_w.value())
+        target_h = float(self.params.vector_h.value())
+        keep_aspect = bool(self.params.vector_keep_aspect.isChecked())
+        try:
+            return fit_polylines(
+                self._polylines,
+                target_width_mm=target_w,
+                target_height_mm=target_h,
+                keep_aspect=keep_aspect,
+            )
+        except ValueError:
+            return list(self._polylines)
 
     def _on_preview(self) -> None:
         strategy = self.params.current_strategy()
@@ -558,19 +637,24 @@ class MainWindow(QMainWindow):
                 size_text = f"V-carve, {w:.1f}×{h:.1f} мм"
             elif strategy == STRATEGY_PROFILE and self._polylines:
                 pparams = self.params.to_profile_parameters()
-                moves = build_profile_moves(self._polylines, pparams)
-                w = h = None
-                size_text = f"полилиний: {len(self._polylines)}"
+                polys = self._scaled_polylines()
+                moves = build_profile_moves(polys, pparams)
+                bbox = polylines_bbox(polys)
+                if bbox is not None:
+                    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+                    size_text = f"полилиний: {len(polys)}; {w:.1f}×{h:.1f} мм"
+                else:
+                    w = h = None
+                    size_text = f"полилиний: {len(polys)}"
             elif strategy == STRATEGY_POCKET and self._polylines:
                 kparams = self.params.to_pocket_parameters()
-                moves = build_pocket_moves(self._polylines, kparams)
+                polys = self._scaled_polylines()
+                moves = build_pocket_moves(polys, kparams)
                 if kparams.workpiece_size_mm is not None:
                     w, h = kparams.workpiece_size_mm
                 else:
                     w = h = None
-                size_text = (
-                    f"режим {kparams.mode}, карманов: {sum(1 for p in self._polylines if p.closed)}"
-                )
+                size_text = f"режим {kparams.mode}, карманов: {sum(1 for p in polys if p.closed)}"
             else:
                 return
         except ValueError as exc:
@@ -737,11 +821,15 @@ class MainWindow(QMainWindow):
                 if not self._polylines:
                     QMessageBox.information(self, "Нет данных", "Сначала откройте SVG или DXF.")
                     return None
-                return generate_profile_gcode(self._polylines, self.params.to_profile_parameters())
+                return generate_profile_gcode(
+                    self._scaled_polylines(), self.params.to_profile_parameters()
+                )
             if not self._polylines:
                 QMessageBox.information(self, "Нет данных", "Сначала откройте SVG или DXF.")
                 return None
-            return generate_pocket_gcode(self._polylines, self.params.to_pocket_parameters())
+            return generate_pocket_gcode(
+                self._scaled_polylines(), self.params.to_pocket_parameters()
+            )
         except ValueError as exc:
             QMessageBox.warning(self, "Параметры", str(exc))
             return None

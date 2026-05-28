@@ -195,6 +195,57 @@ def test_recent_files_grows_then_clear(qapp: object, tmp_path: object) -> None:
     assert not window._settings().value("recent_files", [], list)
 
 
+def test_set_original_vector_size_locks_aspect_and_links_height(qapp: object) -> None:
+    from leathercam.ui.main_window import _Parameters
+
+    form = _Parameters()
+    form.set_original_vector_size(width_mm=100.0, height_mm=50.0)
+    assert form.vector_w.value() == pytest.approx(100.0)
+    assert form.vector_h.value() == pytest.approx(50.0)
+    assert form.reset_vector_size_button.isEnabled()
+
+    form.vector_w.setValue(200.0)
+    assert form.vector_h.value() == pytest.approx(100.0)
+
+
+def test_unlocked_aspect_changes_width_and_height_independently(qapp: object) -> None:
+    from leathercam.ui.main_window import _Parameters
+
+    form = _Parameters()
+    form.set_original_vector_size(width_mm=100.0, height_mm=50.0)
+    form.vector_keep_aspect.setChecked(False)
+    form.vector_w.setValue(60.0)
+    assert form.vector_h.value() == pytest.approx(50.0)
+
+
+def test_reset_vector_size_button_restores_original(qapp: object) -> None:
+    from leathercam.ui.main_window import _Parameters
+
+    form = _Parameters()
+    form.set_original_vector_size(width_mm=80.0, height_mm=40.0)
+    form.vector_w.setValue(160.0)
+    form._on_reset_vector_size()
+    assert form.vector_w.value() == pytest.approx(80.0)
+    assert form.vector_h.value() == pytest.approx(40.0)
+
+
+def test_loading_svg_populates_vector_size_fields(qapp: object, tmp_path: object) -> None:
+    from pathlib import Path
+
+    from leathercam.ui.main_window import MainWindow
+
+    svg_path = Path(str(tmp_path)) / "rect.svg"
+    svg_path.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="40mm" height="20mm" '
+        'viewBox="0 0 40 20"><rect x="5" y="5" width="30" height="10"/></svg>'
+    )
+    window = MainWindow()
+    assert window._open_path(svg_path)
+    assert window.params.vector_w.value() == pytest.approx(30.0, abs=0.5)
+    assert window.params.vector_h.value() == pytest.approx(10.0, abs=0.5)
+    assert window.params.reset_vector_size_button.isEnabled()
+
+
 def test_theme_switch_updates_application_stylesheet(qapp: object) -> None:
     from PySide6.QtWidgets import QApplication
 
