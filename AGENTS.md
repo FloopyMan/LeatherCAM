@@ -93,13 +93,14 @@ cam/
 
 - Каждый модуль в `leathercam/` (кроме `ui/`) — должен иметь соответствующий тест в `tests/`.
 - Снапшот-тесты G-code: входные параметры → ожидаемый текст. Допуски — через сравнение чисел с точностью 1e-3.
-- Перед коммитом запускайте:
+- Перед коммитом запускайте `make check` (это `ruff check` + `ruff format --check` + `pytest` под offscreen Qt). Или вручную:
   ```bash
   ruff check .
   ruff format --check .
-  pytest -q
+  QT_QPA_PLATFORM=offscreen pytest -q
   ```
 - CI прогоняет то же самое на Ubuntu и Windows.
+- Запуск GUI локально: `make run` (или `python -m leathercam`).
 
 ---
 
