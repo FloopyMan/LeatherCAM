@@ -291,6 +291,37 @@ def test_loading_svg_populates_vector_size_fields(qapp: object, tmp_path: object
     assert window.params.reset_vector_size_button.isEnabled()
 
 
+def test_saved_gcode_matches_preview_after_resize_and_position(
+    qapp: object, tmp_path: object
+) -> None:
+    """Regression: previously _on_generate bypassed _scaled_polylines so
+    the saved G-code used unscaled coordinates while the preview was
+    correct. _generate_code (used by both Save and Send-to-machine)
+    must honour the form's resize + position settings."""
+    from pathlib import Path
+
+    from leathercam.job import generate_pocket_gcode
+    from leathercam.ui.main_window import STRATEGY_POCKET, MainWindow
+
+    svg_path = Path(str(tmp_path)) / "circle.svg"
+    svg_path.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="20mm" '
+        'viewBox="0 0 20 20"><circle cx="10" cy="10" r="5"/></svg>'
+    )
+    window = MainWindow()
+    assert window._open_path(svg_path)
+    window.params.set_strategy(STRATEGY_POCKET)
+    window.params.vector_w.setValue(50.0)
+    window.params.vector_x.setValue(30.0)
+    window.params.vector_y.setValue(20.0)
+    window.params.workpiece_w.setValue(120.0)
+    window.params.workpiece_h.setValue(80.0)
+
+    saved = window._generate_code()
+    direct = generate_pocket_gcode(window._scaled_polylines(), window.params.to_pocket_parameters())
+    assert saved == direct
+
+
 def test_theme_switch_updates_application_stylesheet(qapp: object) -> None:
     from PySide6.QtWidgets import QApplication
 

@@ -896,32 +896,9 @@ class MainWindow(QMainWindow):
             return None
 
     def _on_generate(self) -> None:
-        strategy = self.params.current_strategy()
-        try:
-            if strategy == STRATEGY_RASTER:
-                if self._image is None:
-                    QMessageBox.information(self, "Нет данных", "Сначала откройте изображение.")
-                    return
-                code = generate_gcode(self._image, self.params.to_raster_parameters())
-            elif strategy == STRATEGY_VCARVE:
-                if self._image is None:
-                    QMessageBox.information(self, "Нет данных", "Сначала откройте изображение.")
-                    return
-                code = generate_vcarve_gcode(self._image, self.params.to_vcarve_parameters())
-            elif strategy == STRATEGY_PROFILE:
-                if not self._polylines:
-                    QMessageBox.information(self, "Нет данных", "Сначала откройте SVG или DXF.")
-                    return
-                code = generate_profile_gcode(self._polylines, self.params.to_profile_parameters())
-            else:
-                if not self._polylines:
-                    QMessageBox.information(self, "Нет данных", "Сначала откройте SVG или DXF.")
-                    return
-                code = generate_pocket_gcode(self._polylines, self.params.to_pocket_parameters())
-        except ValueError as exc:
-            QMessageBox.warning(self, "Параметры", str(exc))
+        code = self._generate_code()
+        if code is None:
             return
-
         default_name = (self._source_path.stem if self._source_path else "job") + ".gcode"
         path_str, _ = QFileDialog.getSaveFileName(
             self, "Сохранить G-code", default_name, "G-code (*.gcode *.nc *.tap);;Все файлы (*)"
