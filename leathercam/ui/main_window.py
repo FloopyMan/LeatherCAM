@@ -42,13 +42,16 @@ from leathercam.job import (
     JobParameters,
     PocketJobParameters,
     ProfileJobParameters,
+    VCarveJobParameters,
     build_moves,
     build_pocket_moves,
     build_profile_moves,
     build_raster,
+    build_vcarve_moves,
     generate_gcode,
     generate_pocket_gcode,
     generate_profile_gcode,
+    generate_vcarve_gcode,
 )
 from leathercam.preview import render_toolpath
 from leathercam.vector import Polyline, load_dxf, load_svg
@@ -58,6 +61,7 @@ logger = logging.getLogger(__name__)
 STRATEGY_RASTER = "raster"
 STRATEGY_PROFILE = "profile"
 STRATEGY_POCKET = "pocket"
+STRATEGY_VCARVE = "vcarve"
 
 
 class _Parameters(QWidget):
@@ -74,6 +78,7 @@ class _Parameters(QWidget):
         self.strategy.addItem("Растровая (PNG/JPG)", STRATEGY_RASTER)
         self.strategy.addItem("Контурная (SVG/DXF)", STRATEGY_PROFILE)
         self.strategy.addItem("Карман (SVG/DXF, выборка фона)", STRATEGY_POCKET)
+        self.strategy.addItem("V-carve (PNG/JPG, V-фреза)", STRATEGY_VCARVE)
         self.strategy.currentIndexChanged.connect(self._sync_visibility)
         strategy_form.addRow("Тип:", self.strategy)
 
@@ -97,6 +102,13 @@ class _Parameters(QWidget):
         vector_form.addRow("Диаметр фрезы:", self.tool_diameter)
         vector_form.addRow("Сторона (Profile):", self.side)
         vector_form.addRow("Шаг (step-over, Pocket):", self.step_over)
+
+        self.vcarve_box = QGroupBox("V-carve")
+        vcarve_form = QFormLayout(self.vcarve_box)
+        self.v_angle = self._double(10.0, 170.0, 60.0, 5.0, "°")
+        self.v_max_depth = self._double(0.1, 20.0, 2.0, 0.1, " мм")
+        vcarve_form.addRow("Угол V-фрезы:", self.v_angle)
+        vcarve_form.addRow("Макс. глубина:", self.v_max_depth)
 
         cut_box = QGroupBox("Глубина")
         cut_form = QFormLayout(cut_box)
@@ -124,6 +136,7 @@ class _Parameters(QWidget):
         layout.addWidget(strategy_box)
         layout.addWidget(self.image_box)
         layout.addWidget(self.vector_box)
+        layout.addWidget(self.vcarve_box)
         layout.addWidget(cut_box)
         layout.addWidget(stamp_box)
         layout.addWidget(machine_box)
@@ -150,8 +163,9 @@ class _Parameters(QWidget):
 
     def _sync_visibility(self) -> None:
         strategy = self.strategy.currentData()
-        self.image_box.setVisible(strategy == STRATEGY_RASTER)
+        self.image_box.setVisible(strategy in (STRATEGY_RASTER, STRATEGY_VCARVE))
         self.vector_box.setVisible(strategy in (STRATEGY_PROFILE, STRATEGY_POCKET))
+        self.vcarve_box.setVisible(strategy == STRATEGY_VCARVE)
 
     def current_strategy(self) -> str:
         return str(self.strategy.currentData())
@@ -182,6 +196,22 @@ class _Parameters(QWidget):
             tool_diameter_mm=float(self.tool_diameter.value()),
             side=self.side.currentText(),  # type: ignore[arg-type]
             depth_mm=float(self.depth.value()),
+            step_down_mm=float(self.step_down.value()),
+            feed_xy=float(self.feed_xy.value()),
+            feed_z=float(self.feed_z.value()),
+            spindle_rpm=int(self.spindle_rpm.value()),
+            safe_z=float(self.safe_z.value()),
+            mirror_x=bool(self.mirror_x.isChecked()),
+        )
+
+    def to_vcarve_parameters(self) -> VCarveJobParameters:
+        return VCarveJobParameters(
+            target_width_mm=float(self.target_width.value()),
+            pixel_size_mm=float(self.pixel_size.value()),
+            threshold=int(self.threshold.value()),
+            invert=bool(self.invert.isChecked()),
+            v_angle_deg=float(self.v_angle.value()),
+            max_depth_mm=float(self.v_max_depth.value()),
             step_down_mm=float(self.step_down.value()),
             feed_xy=float(self.feed_xy.value()),
             feed_z=float(self.feed_z.value()),
@@ -348,6 +378,12 @@ class MainWindow(QMainWindow):
                 moves = build_moves(raster, rparams)
                 w, h = raster.width_mm, raster.height_mm
                 size_text = f"{w:.1f}×{h:.1f} мм"
+            elif strategy == STRATEGY_VCARVE and self._image is not None:
+                vparams = self.params.to_vcarve_parameters()
+                moves = build_vcarve_moves(self._image, vparams)
+                w = vparams.target_width_mm
+                h = w * self._image.height / self._image.width
+                size_text = f"V-carve, {w:.1f}×{h:.1f} мм"
             elif strategy == STRATEGY_PROFILE and self._polylines:
                 pparams = self.params.to_profile_parameters()
                 moves = build_profile_moves(self._polylines, pparams)
@@ -376,6 +412,11 @@ class MainWindow(QMainWindow):
                     QMessageBox.information(self, "Нет данных", "Сначала откройте изображение.")
                     return
                 code = generate_gcode(self._image, self.params.to_raster_parameters())
+            elif strategy == STRATEGY_VCARVE:
+                if self._image is None:
+                    QMessageBox.information(self, "Нет данных", "Сначала откройте изображение.")
+                    return
+                code = generate_vcarve_gcode(self._image, self.params.to_vcarve_parameters())
             elif strategy == STRATEGY_PROFILE:
                 if not self._polylines:
                     QMessageBox.information(self, "Нет данных", "Сначала откройте SVG или DXF.")

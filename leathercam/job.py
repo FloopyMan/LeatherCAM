@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from PIL import ImageOps
 from PIL.Image import Image
 
-from leathercam.cam import pocket, profile, raster_zigzag
+from leathercam.cam import pocket, profile, raster_zigzag, v_carve
 from leathercam.cam.profile import Side
 from leathercam.gcode import JobConfig, Move, postprocess
 from leathercam.image import Raster, to_mask
@@ -48,6 +48,28 @@ class ProfileJobParameters:
     side: Side
 
     depth_mm: float
+    step_down_mm: float
+
+    feed_xy: float
+    feed_z: float
+    spindle_rpm: int
+    safe_z: float
+
+    origin: tuple[float, float] = (0.0, 0.0)
+    mirror_x: bool = False
+
+
+@dataclass(frozen=True)
+class VCarveJobParameters:
+    """Stage-3 V-carve (distance-transform level set) parameters."""
+
+    target_width_mm: float
+    pixel_size_mm: float
+    threshold: int
+    invert: bool
+
+    v_angle_deg: float
+    max_depth_mm: float
     step_down_mm: float
 
     feed_xy: float
@@ -112,6 +134,25 @@ def build_profile_moves(polylines: list[Polyline], params: ProfileJobParameters)
     )
 
 
+def build_vcarve_moves(image: Image, params: VCarveJobParameters) -> list[Move]:
+    src = ImageOps.mirror(image) if params.mirror_x else image
+    raster = to_mask(
+        src,
+        target_width_mm=params.target_width_mm,
+        pixel_size_mm=params.pixel_size_mm,
+        threshold=params.threshold,
+        invert=params.invert,
+    )
+    return v_carve(
+        raster,
+        v_angle_deg=params.v_angle_deg,
+        max_depth_mm=params.max_depth_mm,
+        step_down_mm=params.step_down_mm,
+        safe_z=params.safe_z,
+        origin=params.origin,
+    )
+
+
 def build_pocket_moves(polylines: list[Polyline], params: PocketJobParameters) -> list[Move]:
     src = _mirror_x(polylines) if params.mirror_x else polylines
     return pocket(
@@ -125,7 +166,9 @@ def build_pocket_moves(polylines: list[Polyline], params: PocketJobParameters) -
     )
 
 
-def _config(params: JobParameters | ProfileJobParameters | PocketJobParameters) -> JobConfig:
+def _config(
+    params: JobParameters | ProfileJobParameters | PocketJobParameters | VCarveJobParameters,
+) -> JobConfig:
     return JobConfig(
         feed_xy=params.feed_xy,
         feed_z=params.feed_z,
@@ -150,4 +193,10 @@ def generate_profile_gcode(polylines: list[Polyline], params: ProfileJobParamete
 def generate_pocket_gcode(polylines: list[Polyline], params: PocketJobParameters) -> str:
     """Run the pocket pipeline: polylines → area-cleared toolpath → G-code text."""
     moves = build_pocket_moves(polylines, params)
+    return postprocess(moves, _config(params))
+
+
+def generate_vcarve_gcode(image: Image, params: VCarveJobParameters) -> str:
+    """Run the V-carve pipeline: image → mask → level-set contours → G-code text."""
+    moves = build_vcarve_moves(image, params)
     return postprocess(moves, _config(params))
