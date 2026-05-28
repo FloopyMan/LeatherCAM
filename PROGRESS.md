@@ -85,22 +85,22 @@
 
 ## Этап 6. Отправка на станок (опционально)
 
-- [ ] Список COM-портов
-- [ ] Подключение к GRBL, чтение `$$`
-- [ ] Стриминг G-code (character-counting protocol)
-- [ ] Jog, homing, zeroing
-- [ ] Пауза / резюме / стоп
+- [x] 2026-05-28 — Список COM-портов (`leathercam/grbl/ports.py`)
+- [x] 2026-05-28 — Подключение к GRBL (`GrblTransport.connect`, send_command)
+- [x] 2026-05-28 — Стриминг G-code (character-counting protocol, 128-байтный RX)
+- [x] 2026-05-28 — Jog, homing ($H), zeroing (G92)
+- [x] 2026-05-28 — Пауза / резюме / стоп (realtime ~/!/Ctrl-X)
 
 ---
 
 ## Этап 7. Полировка UX
 
-- [ ] Тёмная/светлая тема
-- [ ] Локализация (ru/en)
-- [ ] Drag&drop
-- [ ] Recent files
-- [ ] Валидация полей и подсказки
-- [ ] Логирование (rotating file handler)
+- [x] 2026-05-28 — Тёмная/светлая/системная тема (меню «Вид → Тема»)
+- [ ] Локализация (ru/en) — отложено: пока интерфейс только русский
+- [x] 2026-05-28 — Drag&drop файлов на главное окно
+- [x] 2026-05-28 — Recent files (QSettings, до 5 файлов)
+- [ ] Подсказки/валидация полей — отложено
+- [x] 2026-05-28 — Логирование (rotating file handler в user_log_dir)
 
 ---
 
@@ -222,6 +222,40 @@ moves); статус-строка показывает оценку времен
 Псевдо-3D heightmap и подсветка коллизий отложены — текущая визуализация
 достаточно информативна.
 
-Следующая остановка — Этап 6 (отправка G-code на станок через GRBL/serial)
-либо Этап 7 (UX-полировка: темы, recent files, drag&drop). Можно также
-доделать heightmap, если станет нужно.
+### Этап 6 — отправка G-code на станок (2026-05-28)
+
+`leathercam/grbl/transport.py`: `GrblTransport` с character-counting
+flow control (128-байтный RX-буфер GRBL отслеживается в deque
+inflight-строк). API: connect / disconnect / send_command / stream /
+pause / resume / soft_reset / request_status / list_serial_ports.
+`SerialLike` Protocol развязывает транспорт от pyserial (тесты
+подсовывают `FakeSerial`).
+
+UI: меню «Файл → Отправить на станок…» (Ctrl+Shift+S) открывает
+`MachineDialog` — выбор порта/скорости, ручная команда, jog-сетка
+X/Y/Z± с шагом и подачей, Home/$H, Zero/G92, прогресс-бар стриминга
+с кнопками Старт/Пауза/Продолжить/Стоп. Стриминг идёт в `QThread`
+через `StreamWorker`.
+
+13 unit-тестов транспорта (FakeSerial). 190 всего.
+
+### Этап 7 — полировка UX (2026-05-28)
+
+- **Drag&drop**: PNG/JPG/BMP/SVG/DXF на главное окно — `_open_path`
+  диспатчит по расширению.
+- **Recent files**: подменю «Файл → Недавние файлы» через `QSettings`
+  (до 5 записей). Каждое успешное открытие добавляет путь, есть кнопка
+  «Очистить список».
+- **Тёмная/светлая/системная тема**: меню «Вид → Тема», сохраняется в
+  `QSettings`, применяется через `QApplication.setStyleSheet`.
+- **Логирование**: rotating file handler в `~/.local/state/leathercam/log/`
+  (или `%LOCALAPPDATA%\leathercam\Logs\` на Windows), 1 МБ × 5 ротаций.
+  Дублируется в консоль.
+
+Локализация и расширенные подсказки полей отложены — UI пока на русском.
+
+4 новых UI-теста + рефакторинг загрузки файлов в общий `_open_path`.
+194 unit-теста всего, ruff чисто.
+
+Следующая остановка — Этап 8 (дистрибуция: PyInstaller + Inno Setup для
+Windows, AppImage для Linux, README с примерами).

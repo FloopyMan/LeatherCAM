@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 from PIL import Image
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QPainter
+from PySide6.QtCore import QSettings, Qt
+from PySide6.QtGui import QAction, QPainter, QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -68,6 +69,32 @@ STRATEGY_RASTER = "raster"
 STRATEGY_PROFILE = "profile"
 STRATEGY_POCKET = "pocket"
 STRATEGY_VCARVE = "vcarve"
+
+THEME_LIGHT = "light"
+THEME_DARK = "dark"
+THEME_SYSTEM = "system"
+
+MAX_RECENT_FILES = 5
+
+_DARK_STYLESHEET = """
+QWidget { background-color: #2b2b2b; color: #e0e0e0; }
+QGroupBox { border: 1px solid #444; margin-top: 8px; padding-top: 12px; }
+QGroupBox::title { color: #d0d0d0; subcontrol-origin: margin; left: 8px; }
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox { background-color: #3a3a3a; color: #f0f0f0;
+    border: 1px solid #555; padding: 2px; }
+QPushButton { background-color: #444; color: #f0f0f0; border: 1px solid #666; padding: 4px 12px; }
+QPushButton:hover { background-color: #555; }
+QPushButton:disabled { color: #777; }
+QMenuBar { background-color: #2b2b2b; color: #e0e0e0; }
+QMenu { background-color: #2b2b2b; color: #e0e0e0; }
+QMenu::item:selected { background-color: #444; }
+QStatusBar { background-color: #1f1f1f; color: #cccccc; }
+QGraphicsView { background-color: #1a1a1a; border: 1px solid #444; }
+QSlider::groove:horizontal { background: #444; height: 6px; }
+QSlider::handle:horizontal { background: #888; width: 12px; margin: -4px 0; border-radius: 6px; }
+"""
+
+_LIGHT_STYLESHEET = ""  # rely on system light defaults
 
 
 class _Parameters(QWidget):
@@ -351,8 +378,12 @@ class MainWindow(QMainWindow):
         splitter.setSizes([380, 900])
         self.setCentralWidget(splitter)
 
+        self._recent_menu: Any = None
+        self.setAcceptDrops(True)
         self._build_menu()
         self.setStatusBar(QStatusBar(self))
+        self._apply_saved_theme()
+        self._refresh_recent_menu()
 
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu("&Файл")
@@ -366,6 +397,10 @@ class MainWindow(QMainWindow):
         open_vec.setShortcut("Ctrl+Shift+O")
         open_vec.triggered.connect(self._on_open_vector)
         file_menu.addAction(open_vec)
+
+        file_menu.addSeparator()
+
+        self._recent_menu = file_menu.addMenu("&Недавние файлы")
 
         file_menu.addSeparator()
 
@@ -395,6 +430,17 @@ class MainWindow(QMainWindow):
         engrave_action.triggered.connect(self._apply_engrave_preset)
         presets_menu.addAction(engrave_action)
 
+        view_menu = self.menuBar().addMenu("&Вид")
+        theme_menu = view_menu.addMenu("&Тема")
+        for label, key in (
+            ("Светлая", THEME_LIGHT),
+            ("Тёмная", THEME_DARK),
+            ("Системная", THEME_SYSTEM),
+        ):
+            action = QAction(label, self)
+            action.triggered.connect(lambda _checked=False, k=key: self._apply_theme(k))
+            theme_menu.addAction(action)
+
     def _apply_cliche_preset(self) -> None:
         """Configure the form for a leather-embossing cliché.
 
@@ -419,6 +465,9 @@ class MainWindow(QMainWindow):
         if self._image is not None:
             self._on_preview()
 
+    _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".bmp")
+    _VECTOR_EXTS = (".svg", ".dxf")
+
     def _on_open_image(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(
             self,
@@ -426,23 +475,8 @@ class MainWindow(QMainWindow):
             "",
             "Изображения (*.png *.jpg *.jpeg *.bmp);;Все файлы (*)",
         )
-        if not path_str:
-            return
-        path = Path(path_str)
-        try:
-            image = Image.open(path)
-            image.load()
-        except OSError as exc:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось открыть файл: {exc}")
-            return
-        self._image = image
-        self._polylines = []
-        self._source_path = path
-        self.params.set_strategy(STRATEGY_RASTER)
-        self.status_label.setText(f"Загружено: {path.name} ({image.width}×{image.height} px)")
-        self.preview_button.setEnabled(True)
-        self.generate_button.setEnabled(True)
-        self._on_preview()
+        if path_str:
+            self._open_path(Path(path_str))
 
     def _on_open_vector(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(
@@ -451,9 +485,37 @@ class MainWindow(QMainWindow):
             "",
             "Вектор (*.svg *.dxf);;SVG (*.svg);;DXF (*.dxf);;Все файлы (*)",
         )
-        if not path_str:
-            return
-        path = Path(path_str)
+        if path_str:
+            self._open_path(Path(path_str))
+
+    def _open_path(self, path: Path) -> bool:
+        suffix = path.suffix.lower()
+        if suffix in self._IMAGE_EXTS:
+            return self._load_image(path)
+        if suffix in self._VECTOR_EXTS:
+            return self._load_vector(path)
+        QMessageBox.warning(self, "Неизвестный формат", f"Расширение {suffix!r} не поддержано")
+        return False
+
+    def _load_image(self, path: Path) -> bool:
+        try:
+            image = Image.open(path)
+            image.load()
+        except OSError as exc:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось открыть файл: {exc}")
+            return False
+        self._image = image
+        self._polylines = []
+        self._source_path = path
+        self.params.set_strategy(STRATEGY_RASTER)
+        self.status_label.setText(f"Загружено: {path.name} ({image.width}×{image.height} px)")
+        self.preview_button.setEnabled(True)
+        self.generate_button.setEnabled(True)
+        self._on_preview()
+        self._remember_recent(path)
+        return True
+
+    def _load_vector(self, path: Path) -> bool:
         suffix = path.suffix.lower()
         try:
             if suffix == ".svg":
@@ -461,16 +523,13 @@ class MainWindow(QMainWindow):
             elif suffix == ".dxf":
                 polylines = load_dxf(path)
             else:
-                QMessageBox.warning(
-                    self, "Неизвестный формат", f"Расширение {suffix!r} не поддержано"
-                )
-                return
+                return False
         except (OSError, ValueError) as exc:
             QMessageBox.critical(self, "Ошибка", f"Не удалось прочитать вектор: {exc}")
-            return
+            return False
         if not polylines:
             QMessageBox.warning(self, "Пусто", "В файле не нашлось геометрии.")
-            return
+            return False
         self._image = None
         self._polylines = polylines
         self._source_path = path
@@ -479,6 +538,8 @@ class MainWindow(QMainWindow):
         self.preview_button.setEnabled(True)
         self.generate_button.setEnabled(True)
         self._on_preview()
+        self._remember_recent(path)
+        return True
 
     def _on_preview(self) -> None:
         strategy = self.params.current_strategy()
@@ -564,6 +625,92 @@ class MainWindow(QMainWindow):
         )
         warnings = exceeds_bounds(bbox, safe_z=safe_z)
         self.bounds_label.setText("Внимание: " + "; ".join(warnings) if warnings else "")
+
+    # --- Drag & drop -------------------------------------------------------
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802 — Qt override
+        urls = event.mimeData().urls() if event.mimeData() else []
+        if any(
+            u.toLocalFile().lower().endswith(self._IMAGE_EXTS + self._VECTOR_EXTS) for u in urls
+        ):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:  # noqa: N802 — Qt override
+        for url in event.mimeData().urls():
+            path = Path(url.toLocalFile())
+            if path.is_file() and self._open_path(path):
+                event.acceptProposedAction()
+                return
+        event.ignore()
+
+    # --- Recent files ------------------------------------------------------
+
+    def _settings(self) -> QSettings:
+        return QSettings("leathercam", "leathercam")
+
+    def _remember_recent(self, path: Path) -> None:
+        settings = self._settings()
+        recent = [
+            str(path),
+            *(p for p in settings.value("recent_files", [], list) if p != str(path)),
+        ]
+        recent = recent[:MAX_RECENT_FILES]
+        settings.setValue("recent_files", recent)
+        self._refresh_recent_menu()
+
+    def _refresh_recent_menu(self) -> None:
+        if self._recent_menu is None:
+            return
+        self._recent_menu.clear()
+        recent = self._settings().value("recent_files", [], list) or []
+        if not recent:
+            placeholder = QAction("(пусто)", self)
+            placeholder.setEnabled(False)
+            self._recent_menu.addAction(placeholder)
+            return
+        for path_str in recent:
+            path = Path(path_str)
+            action = QAction(path.name, self)
+            action.setToolTip(str(path))
+            action.triggered.connect(lambda _checked=False, p=path: self._open_path(p))
+            self._recent_menu.addAction(action)
+        self._recent_menu.addSeparator()
+        clear = QAction("Очистить список", self)
+        clear.triggered.connect(self._clear_recent)
+        self._recent_menu.addAction(clear)
+
+    def _clear_recent(self) -> None:
+        settings = self._settings()
+        settings.setValue("recent_files", [])
+        self._refresh_recent_menu()
+
+    # --- Theme -------------------------------------------------------------
+
+    def _apply_saved_theme(self) -> None:
+        saved = self._settings().value("theme", THEME_SYSTEM, str)
+        self._apply_theme(saved, persist=False)
+
+    def _apply_theme(self, theme: str, *, persist: bool = True) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is None:
+            return
+        if theme == THEME_DARK:
+            app.setStyleSheet(_DARK_STYLESHEET)
+        elif theme == THEME_LIGHT:
+            app.setStyleSheet(_LIGHT_STYLESHEET)
+        else:
+            app.setStyleSheet("")
+        # Make sure the preview viewport background follows the theme.
+        bg = self.view.palette().color(QPalette.ColorRole.Base)
+        self.view.setBackgroundBrush(bg)
+        if persist:
+            self._settings().setValue("theme", theme)
+
+    # --- Send to machine ---------------------------------------------------
 
     def _on_send_to_machine(self) -> None:
         code = self._generate_code()

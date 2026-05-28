@@ -144,3 +144,64 @@ def test_apply_recommended_sets_v_angle_for_vbit(qapp: object) -> None:
     form.v_angle.setValue(45.0)
     form._on_apply_recommended()
     assert form.v_angle.value() == pytest.approx(60.0)
+
+
+def test_open_path_image_dispatches_to_image_loader(qapp: object, tmp_path: object) -> None:
+    from pathlib import Path
+
+    from PIL import Image as PILImage
+
+    from leathercam.ui.main_window import STRATEGY_RASTER, MainWindow
+
+    image_path = Path(str(tmp_path)) / "test.png"
+    PILImage.new("L", (32, 16), color=255).save(image_path)
+    window = MainWindow()
+    assert window._open_path(image_path)
+    assert window._image is not None
+    assert window.params.current_strategy() == STRATEGY_RASTER
+
+
+def test_open_path_unknown_extension_warns_and_returns_false(
+    qapp: object, tmp_path: object, monkeypatch
+) -> None:
+    from pathlib import Path
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from leathercam.ui.main_window import MainWindow
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **kw: QMessageBox.StandardButton.Ok)
+    window = MainWindow()
+    weird = Path(str(tmp_path)) / "file.xyz"
+    weird.write_text("x")
+    assert window._open_path(weird) is False
+
+
+def test_recent_files_grows_then_clear(qapp: object, tmp_path: object) -> None:
+    from pathlib import Path
+
+    from PIL import Image as PILImage
+
+    from leathercam.ui.main_window import MainWindow
+
+    window = MainWindow()
+    window._clear_recent()
+    p = Path(str(tmp_path)) / "r.png"
+    PILImage.new("L", (4, 4), color=0).save(p)
+    window._open_path(p)
+    recent = window._settings().value("recent_files", [], list)
+    assert str(p) in recent
+    window._clear_recent()
+    assert not window._settings().value("recent_files", [], list)
+
+
+def test_theme_switch_updates_application_stylesheet(qapp: object) -> None:
+    from PySide6.QtWidgets import QApplication
+
+    from leathercam.ui.main_window import THEME_DARK, THEME_LIGHT, MainWindow
+
+    window = MainWindow()
+    window._apply_theme(THEME_DARK)
+    assert "background-color" in QApplication.instance().styleSheet()
+    window._apply_theme(THEME_LIGHT)
+    assert QApplication.instance().styleSheet() == ""
