@@ -12,6 +12,12 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
+# softprops/action-gh-release needs write access to the repository's
+# Releases. By default GITHUB_TOKEN is read-only for `contents`, which
+# is why the upload step failed with HTTP 403.
+permissions:
+  contents: write
+
 jobs:
   linux-appimage:
     # ubuntu-22.04 still ships libfuse2 in apt; 24.04 dropped it.
@@ -48,7 +54,8 @@ jobs:
 
       - name: Build AppImage
         env:
-          PYTHON: python
+          # setup-python installs python3 on Linux, not `python`.
+          PYTHON: python3
         run: bash packaging/build-appimage.sh
 
       - name: Upload AppImage

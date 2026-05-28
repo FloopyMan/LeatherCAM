@@ -16,15 +16,30 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-VENV_PY="${PYTHON:-.venv-dist/bin/python}"
-# Accept either an executable path or a PATH-resolvable command name.
-if ! command -v "$VENV_PY" >/dev/null 2>&1 && [[ ! -x "$VENV_PY" ]]; then
-    echo "error: $VENV_PY not found." >&2
+_resolve_python() {
+    if [[ -n "${PYTHON:-}" ]] && (command -v "$PYTHON" >/dev/null 2>&1 || [[ -x "$PYTHON" ]]); then
+        printf '%s\n' "$PYTHON"; return 0
+    fi
+    if [[ -x .venv-dist/bin/python ]]; then
+        printf '%s\n' ".venv-dist/bin/python"; return 0
+    fi
+    for cand in python3 python; do
+        if command -v "$cand" >/dev/null 2>&1; then
+            printf '%s\n' "$cand"; return 0
+        fi
+    done
+    return 1
+}
+
+if ! VENV_PY="$(_resolve_python)"; then
+    echo "error: no usable Python found." >&2
     echo "Build with 'make appimage' — it creates an isolated .venv-dist" >&2
     echo "without --system-site-packages, so PyInstaller only sees the" >&2
     echo "runtime dependencies declared in pyproject.toml." >&2
+    echo "Or set PYTHON=/path/to/python before invoking this script." >&2
     exit 1
 fi
+echo "==> using python: $VENV_PY"
 
 if ! command -v appimagetool >/dev/null 2>&1; then
     echo "error: appimagetool not on PATH. Install from:" >&2
