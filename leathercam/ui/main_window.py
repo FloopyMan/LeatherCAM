@@ -61,7 +61,14 @@ from leathercam.job import (
 from leathercam.preview import render_toolpath
 from leathercam.profiles import Material, Tool, load_materials, load_tools
 from leathercam.ui.machine_dialog import MachineDialog
-from leathercam.vector import Polyline, fit_polylines, load_dxf, load_svg, polylines_bbox
+from leathercam.vector import (
+    Polyline,
+    fit_polylines,
+    load_dxf,
+    load_svg,
+    place_polylines,
+    polylines_bbox,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +173,11 @@ class _Parameters(QWidget):
         self.reset_vector_size_button = QPushButton("Сбросить к исходному")
         self.reset_vector_size_button.clicked.connect(self._on_reset_vector_size)
         self.reset_vector_size_button.setEnabled(False)
+        self.vector_x = self._double(-500.0, 500.0, 0.0, 0.5, " мм")
+        self.vector_y = self._double(-500.0, 500.0, 0.0, 0.5, " мм")
+        self.center_button = QPushButton("Центрировать в заготовке")
+        # MainWindow wires this up — _Parameters has no knowledge of the
+        # current polylines / workpiece size.
         vector_form.addRow("Диаметр фрезы:", self.tool_diameter)
         vector_form.addRow("Сторона (Profile):", self.side)
         vector_form.addRow("Шаг (step-over, Pocket):", self.step_over)
@@ -176,6 +188,9 @@ class _Parameters(QWidget):
         vector_form.addRow("Размер рисунка, высота:", self.vector_h)
         vector_form.addRow(self.vector_keep_aspect)
         vector_form.addRow(self.reset_vector_size_button)
+        vector_form.addRow("Положение рисунка X:", self.vector_x)
+        vector_form.addRow("Положение рисунка Y:", self.vector_y)
+        vector_form.addRow(self.center_button)
 
         self.vcarve_box = QGroupBox("V-carve")
         vcarve_form = QFormLayout(self.vcarve_box)
@@ -443,6 +458,7 @@ class MainWindow(QMainWindow):
         self.setStatusBar(QStatusBar(self))
         self._apply_saved_theme()
         self._refresh_recent_menu()
+        self.params.center_button.clicked.connect(self._on_center_vector)
 
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu("&Файл")
@@ -604,21 +620,59 @@ class MainWindow(QMainWindow):
         return True
 
     def _scaled_polylines(self) -> list[Polyline]:
-        """Apply the form's vector-size settings to self._polylines."""
+        """Apply the form's vector-size and position settings to self._polylines.
+
+        Pipeline: fit → place bbox.min at (0, 0) → translate by (vector_x,
+        vector_y). The two-step placement lets the user think in absolute
+        machine coordinates regardless of where the source file put its
+        origin.
+        """
         if not self._polylines:
             return []
         target_w = float(self.params.vector_w.value())
         target_h = float(self.params.vector_h.value())
         keep_aspect = bool(self.params.vector_keep_aspect.isChecked())
         try:
-            return fit_polylines(
+            scaled = fit_polylines(
                 self._polylines,
                 target_width_mm=target_w,
                 target_height_mm=target_h,
                 keep_aspect=keep_aspect,
             )
         except ValueError:
-            return list(self._polylines)
+            scaled = list(self._polylines)
+        dx = float(self.params.vector_x.value())
+        dy = float(self.params.vector_y.value())
+        return place_polylines(scaled, dx, dy)
+
+    def _on_center_vector(self) -> None:
+        """Position the scaled design at the centre of the workpiece rectangle."""
+        if not self._polylines:
+            return
+        target_w = float(self.params.vector_w.value())
+        target_h = float(self.params.vector_h.value())
+        keep_aspect = bool(self.params.vector_keep_aspect.isChecked())
+        try:
+            scaled = fit_polylines(
+                self._polylines,
+                target_width_mm=target_w,
+                target_height_mm=target_h,
+                keep_aspect=keep_aspect,
+            )
+        except ValueError:
+            scaled = list(self._polylines)
+        bbox = polylines_bbox(scaled)
+        if bbox is None:
+            return
+        design_w = bbox[2] - bbox[0]
+        design_h = bbox[3] - bbox[1]
+        workpiece_w = float(self.params.workpiece_w.value())
+        workpiece_h = float(self.params.workpiece_h.value())
+        cx = (workpiece_w - design_w) / 2.0
+        cy = (workpiece_h - design_h) / 2.0
+        self.params.vector_x.setValue(cx)
+        self.params.vector_y.setValue(cy)
+        self._on_preview()
 
     def _on_preview(self) -> None:
         strategy = self.params.current_strategy()

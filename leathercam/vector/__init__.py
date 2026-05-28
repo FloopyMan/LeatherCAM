@@ -4,8 +4,10 @@ from leathercam.vector.svg import load_svg
 from leathercam.vector.transform import (
     fit_polylines,
     mirror_x,
+    place_polylines,
     polylines_bbox,
     scale_polylines,
+    translate_polylines,
 )
 from leathercam.vector.types import Polyline
 
@@ -17,6 +19,8 @@ __all__ = [
     "load_dxf",
     "load_svg",
     "mirror_x",
+    "place_polylines",
     "polylines_bbox",
     "scale_polylines",
+    "translate_polylines",
 ]

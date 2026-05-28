@@ -132,3 +132,50 @@ def test_fit_polylines_rejects_non_positive_target() -> None:
         fit_polylines([poly], target_width_mm=0.0)
     with pytest.raises(ValueError):
         fit_polylines([poly], target_width_mm=10.0, target_height_mm=0.0, keep_aspect=False)
+
+
+def test_translate_shifts_every_point() -> None:
+    from leathercam.vector import translate_polylines
+
+    poly = Polyline(points=((0.0, 0.0), (1.0, 2.0)))
+    shifted = translate_polylines([poly], 10.0, -5.0)[0]
+    assert shifted.points == ((10.0, -5.0), (11.0, -3.0))
+
+
+def test_translate_zero_offset_is_noop() -> None:
+    from leathercam.vector import translate_polylines
+
+    poly = Polyline(points=((1.0, 2.0), (3.0, 4.0)))
+    assert translate_polylines([poly], 0.0, 0.0)[0].points == poly.points
+
+
+def test_translate_preserves_closed_flag() -> None:
+    from leathercam.vector import translate_polylines
+
+    poly = Polyline(points=((0.0, 0.0), (1.0, 0.0), (1.0, 1.0)), closed=True)
+    shifted = translate_polylines([poly], 5.0, 5.0)[0]
+    assert shifted.closed is True
+
+
+def test_place_polylines_moves_bbox_corner_to_target() -> None:
+    from leathercam.vector import place_polylines, polylines_bbox
+
+    poly = Polyline(points=((10.0, 5.0), (30.0, 5.0), (30.0, 25.0), (10.0, 25.0)), closed=True)
+    placed = place_polylines([poly], 0.0, 0.0)
+    bbox = polylines_bbox(placed)
+    assert bbox == (0.0, 0.0, 20.0, 20.0)
+
+
+def test_place_polylines_arbitrary_corner() -> None:
+    from leathercam.vector import place_polylines, polylines_bbox
+
+    poly = Polyline(points=((0.0, 0.0), (10.0, 10.0)))
+    placed = place_polylines([poly], 50.0, 60.0)
+    bbox = polylines_bbox(placed)
+    assert bbox == (50.0, 60.0, 60.0, 70.0)
+
+
+def test_place_polylines_empty_returns_empty() -> None:
+    from leathercam.vector import place_polylines
+
+    assert place_polylines([], 10.0, 20.0) == []

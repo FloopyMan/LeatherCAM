@@ -229,6 +229,51 @@ def test_reset_vector_size_button_restores_original(qapp: object) -> None:
     assert form.vector_h.value() == pytest.approx(40.0)
 
 
+def test_vector_position_is_applied_after_scaling(qapp: object, tmp_path: object) -> None:
+    from pathlib import Path
+
+    from leathercam.ui.main_window import MainWindow
+    from leathercam.vector import polylines_bbox
+
+    svg_path = Path(str(tmp_path)) / "rect.svg"
+    svg_path.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="10mm" '
+        'viewBox="0 0 20 10"><rect x="0" y="0" width="20" height="10"/></svg>'
+    )
+    window = MainWindow()
+    assert window._open_path(svg_path)
+    window.params.vector_x.setValue(15.0)
+    window.params.vector_y.setValue(25.0)
+    placed = window._scaled_polylines()
+    bbox = polylines_bbox(placed)
+    assert bbox[0] == pytest.approx(15.0, abs=0.5)
+    assert bbox[1] == pytest.approx(25.0, abs=0.5)
+
+
+def test_center_button_centers_design_in_workpiece(qapp: object, tmp_path: object) -> None:
+    from pathlib import Path
+
+    from leathercam.ui.main_window import MainWindow
+    from leathercam.vector import polylines_bbox
+
+    svg_path = Path(str(tmp_path)) / "circle.svg"
+    svg_path.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="20mm" '
+        'viewBox="0 0 20 20"><circle cx="10" cy="10" r="5"/></svg>'
+    )
+    window = MainWindow()
+    assert window._open_path(svg_path)
+    window.params.workpiece_w.setValue(100.0)
+    window.params.workpiece_h.setValue(50.0)
+    window._on_center_vector()
+    placed = window._scaled_polylines()
+    bbox = polylines_bbox(placed)
+    cx = (bbox[0] + bbox[2]) / 2.0
+    cy = (bbox[1] + bbox[3]) / 2.0
+    assert cx == pytest.approx(50.0, abs=0.5)
+    assert cy == pytest.approx(25.0, abs=0.5)
+
+
 def test_loading_svg_populates_vector_size_fields(qapp: object, tmp_path: object) -> None:
     from pathlib import Path
 

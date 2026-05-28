@@ -64,6 +64,24 @@ def fit_polylines(
     return scale_polylines(polylines, sx, sy)
 
 
+def translate_polylines(polylines: list[Polyline], dx: float, dy: float) -> list[Polyline]:
+    """Shift every point by (dx, dy)."""
+    if dx == 0.0 and dy == 0.0:
+        return list(polylines)
+    return [
+        Polyline(points=tuple((x + dx, y + dy) for x, y in poly.points), closed=poly.closed)
+        for poly in polylines
+    ]
+
+
+def place_polylines(polylines: list[Polyline], x: float, y: float) -> list[Polyline]:
+    """Translate so the combined bbox bottom-left corner sits at (x, y)."""
+    bbox = polylines_bbox(polylines)
+    if bbox is None:
+        return list(polylines)
+    return translate_polylines(polylines, x - bbox[0], y - bbox[1])
+
+
 def mirror_x(polylines: list[Polyline]) -> list[Polyline]:
     """Mirror all polylines horizontally around the combined bbox center.
 
