@@ -153,6 +153,67 @@ def test_pocket_visits_first_ring_close_to_boundary() -> None:
     assert bbox[2] == pytest.approx(9.5, abs=0.05)
 
 
+def test_letter_o_keeps_inner_hole_uncut() -> None:
+    """For an annulus (outer ring + inner hole) the pocket must leave the
+    central area uncut. Concretely: no cut moves should land inside the
+    hole."""
+    import math
+
+    def ring(cx: float, cy: float, r: float, n: int = 64) -> Polyline:
+        pts = tuple(
+            (cx + r * math.cos(2 * math.pi * i / n), cy + r * math.sin(2 * math.pi * i / n))
+            for i in range(n)
+        )
+        return Polyline(points=pts, closed=True)
+
+    outer = ring(10.0, 10.0, 8.0)
+    inner = ring(10.0, 10.0, 3.0)
+    moves = pocket(
+        [outer, inner],
+        depth_mm=0.5,
+        step_down_mm=0.5,
+        safe_z=5.0,
+        tool_diameter_mm=1.0,
+        step_over_mm=0.5,
+    )
+    cuts = [(m.x, m.y) for m in moves if not m.rapid]
+    assert cuts, "expected non-empty toolpath for the ring"
+    keep_out_radius = 3.0 + 0.5 - 0.05  # hole + tool radius - tolerance
+    for x, y in cuts:
+        d = math.hypot(x - 10.0, y - 10.0)
+        assert d >= keep_out_radius, (
+            f"cut at ({x:.3f}, {y:.3f}) is {d:.3f}mm from center — "
+            f"closer than the hole radius {keep_out_radius:.3f}"
+        )
+
+
+def test_two_letters_each_keep_their_holes() -> None:
+    import math
+
+    def ring(cx: float, cy: float, r: float, n: int = 48) -> Polyline:
+        pts = tuple(
+            (cx + r * math.cos(2 * math.pi * i / n), cy + r * math.sin(2 * math.pi * i / n))
+            for i in range(n)
+        )
+        return Polyline(points=pts, closed=True)
+
+    o1_outer, o1_inner = ring(0.0, 0.0, 6.0), ring(0.0, 0.0, 2.5)
+    o2_outer, o2_inner = ring(20.0, 0.0, 6.0), ring(20.0, 0.0, 2.5)
+    moves = pocket(
+        [o1_outer, o1_inner, o2_outer, o2_inner],
+        depth_mm=0.4,
+        step_down_mm=0.4,
+        safe_z=5.0,
+        tool_diameter_mm=1.0,
+        step_over_mm=0.5,
+    )
+    cuts = [(m.x, m.y) for m in moves if not m.rapid]
+    for x, y in cuts:
+        d1 = math.hypot(x, y)
+        d2 = math.hypot(x - 20.0, y)
+        assert d1 >= 2.9 or d2 >= 2.9, f"cut at ({x:.2f}, {y:.2f}) sits inside one of the holes"
+
+
 def test_rejects_invalid_parameters() -> None:
     sq = _square()
     for bad in (
