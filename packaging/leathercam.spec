@@ -11,24 +11,32 @@
 # unpack to a tempdir on every launch, which adds 3–5 seconds. onedir
 # starts in well under a second and ships the same total bytes.
 
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+from PyInstaller.utils.hooks import collect_all, collect_submodules, collect_data_files
 
 block_cipher = None
 
-hidden = []
+# PySide6's stock hook can miss the actual Qt6*.dll binaries on Windows,
+# producing "DLL load failed while importing QtWidgets" at first launch.
+# collect_all walks the package and grabs every .pyd, .dll and resource.
+pyside_datas, pyside_binaries, pyside_hidden = collect_all("PySide6")
+shiboken_datas, shiboken_binaries, shiboken_hidden = collect_all("shiboken6")
+
+hidden = list(pyside_hidden) + list(shiboken_hidden)
 hidden += collect_submodules("svgelements")
 hidden += collect_submodules("ezdxf")
 hidden += collect_submodules("shapely")
 hidden += collect_submodules("pyclipper")
 hidden += collect_submodules("scipy.ndimage")
 
-datas = []
+datas = list(pyside_datas) + list(shiboken_datas)
 datas += collect_data_files("ezdxf")
+
+binaries = list(pyside_binaries) + list(shiboken_binaries)
 
 a = Analysis(
     ["../leathercam/__main__.py"],
     pathex=["."],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hidden,
     hookspath=[],
