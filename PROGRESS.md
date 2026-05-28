@@ -12,12 +12,12 @@
 
 ## Инфраструктура (нулевой этап)
 
-- [~] Создать репозиторий и базовые файлы (`AGENTS.md`, `PLAN.md`, `PROGRESS.md`, `README.md`, `.gitignore`) — будет проставлено при коммите
-- [~] Инициализировать `pyproject.toml` с зависимостями — будет проставлено при коммите
-- [~] Настроить `ruff` (lint + format) — будет проставлено при коммите
-- [~] Настроить `pytest` и базовый `tests/conftest.py` — будет проставлено при коммите
-- [~] Создать каркас пакета `leathercam/` — будет проставлено при коммите
-- [~] Настроить GitHub Actions (lint + tests на ubuntu и windows) — будет проставлено при коммите
+- [x] 2026-05-28 — Создать репозиторий и базовые файлы (`AGENTS.md`, `PLAN.md`, `PROGRESS.md`, `README.md`, `.gitignore`) (commit: 8c7569c)
+- [x] 2026-05-28 — Инициализировать `pyproject.toml` с зависимостями (commit: 8c7569c)
+- [x] 2026-05-28 — Настроить `ruff` (lint + format) (commit: 8c7569c)
+- [x] 2026-05-28 — Настроить `pytest` и базовый `tests/conftest.py` (commit: 8c7569c)
+- [x] 2026-05-28 — Создать каркас пакета `leathercam/` (commit: 8c7569c)
+- [x] 2026-05-28 — Настроить GitHub Actions (lint + tests на ubuntu и windows) (commit: 8c7569c)
 - [ ] Первый запуск пустого GUI (требует установки PySide6 в venv)
 
 ---
