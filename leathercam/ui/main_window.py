@@ -59,6 +59,7 @@ from leathercam.job import (
 )
 from leathercam.preview import render_toolpath
 from leathercam.profiles import Material, Tool, load_materials, load_tools
+from leathercam.ui.machine_dialog import MachineDialog
 from leathercam.vector import Polyline, load_dxf, load_svg
 
 logger = logging.getLogger(__name__)
@@ -373,6 +374,11 @@ class MainWindow(QMainWindow):
         save_action.triggered.connect(self._on_generate)
         file_menu.addAction(save_action)
 
+        send_action = QAction("&Отправить на станок…", self)
+        send_action.setShortcut("Ctrl+Shift+S")
+        send_action.triggered.connect(self._on_send_to_machine)
+        file_menu.addAction(send_action)
+
         file_menu.addSeparator()
         quit_action = QAction("&Выход", self)
         quit_action.setShortcut("Ctrl+Q")
@@ -558,6 +564,40 @@ class MainWindow(QMainWindow):
         )
         warnings = exceeds_bounds(bbox, safe_z=safe_z)
         self.bounds_label.setText("Внимание: " + "; ".join(warnings) if warnings else "")
+
+    def _on_send_to_machine(self) -> None:
+        code = self._generate_code()
+        if code is None:
+            return
+        dialog = MachineDialog(code, parent=self)
+        dialog.exec()
+
+    def _generate_code(self) -> str | None:
+        """Run the active strategy and return the G-code text (or None)."""
+        strategy = self.params.current_strategy()
+        try:
+            if strategy == STRATEGY_RASTER:
+                if self._image is None:
+                    QMessageBox.information(self, "Нет данных", "Сначала откройте изображение.")
+                    return None
+                return generate_gcode(self._image, self.params.to_raster_parameters())
+            if strategy == STRATEGY_VCARVE:
+                if self._image is None:
+                    QMessageBox.information(self, "Нет данных", "Сначала откройте изображение.")
+                    return None
+                return generate_vcarve_gcode(self._image, self.params.to_vcarve_parameters())
+            if strategy == STRATEGY_PROFILE:
+                if not self._polylines:
+                    QMessageBox.information(self, "Нет данных", "Сначала откройте SVG или DXF.")
+                    return None
+                return generate_profile_gcode(self._polylines, self.params.to_profile_parameters())
+            if not self._polylines:
+                QMessageBox.information(self, "Нет данных", "Сначала откройте SVG или DXF.")
+                return None
+            return generate_pocket_gcode(self._polylines, self.params.to_pocket_parameters())
+        except ValueError as exc:
+            QMessageBox.warning(self, "Параметры", str(exc))
+            return None
 
     def _on_generate(self) -> None:
         strategy = self.params.current_strategy()
