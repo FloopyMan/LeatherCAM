@@ -73,7 +73,7 @@ def test_save_then_load_tools_round_trip(tmp_path: Path) -> None:
         Tool(id="vbit_45", name="V 45°", kind="vbit", diameter_mm=3.175, angle_deg=45.0),
     ]
     save_tools(tools, target)
-    loaded = load_tools(target)
+    loaded = load_tools(target, merge_defaults=False)
     assert loaded == tools
 
 
@@ -92,8 +92,23 @@ def test_save_then_load_materials_round_trip(tmp_path: Path) -> None:
         )
     ]
     save_materials(materials, target)
-    loaded = load_materials(target)
+    loaded = load_materials(target, merge_defaults=False)
     assert loaded == materials
+
+
+def test_load_merges_missing_defaults(tmp_path: Path) -> None:
+    target = tmp_path / "tools.json"
+    save_tools([Tool(id="custom", name="x", kind="flat", diameter_mm=1.5)], target)
+    loaded = load_tools(target, merge_defaults=True)
+    assert {t.id for t in DEFAULT_TOOLS}.issubset({t.id for t in loaded})
+    assert "custom" in {t.id for t in loaded}
+
+
+def test_load_no_merge_keeps_file_intact(tmp_path: Path) -> None:
+    target = tmp_path / "tools.json"
+    save_tools([Tool(id="custom", name="x", kind="flat", diameter_mm=1.5)], target)
+    loaded = load_tools(target, merge_defaults=False)
+    assert [t.id for t in loaded] == ["custom"]
 
 
 def test_load_tools_from_corrupt_file_raises(tmp_path: Path) -> None:

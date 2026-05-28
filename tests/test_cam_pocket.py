@@ -214,6 +214,105 @@ def test_two_letters_each_keep_their_holes() -> None:
         assert d1 >= 2.9 or d2 >= 2.9, f"cut at ({x:.2f}, {y:.2f}) sits inside one of the holes"
 
 
+def test_background_mode_clears_outside_design_and_keeps_inside() -> None:
+    """In background mode the area cleared is workpiece minus design."""
+    import math
+
+    design = Polyline(
+        points=((40.0, 40.0), (60.0, 40.0), (60.0, 60.0), (40.0, 60.0)),
+        closed=True,
+    )
+    moves = pocket(
+        [design],
+        depth_mm=0.4,
+        step_down_mm=0.4,
+        safe_z=5.0,
+        tool_diameter_mm=1.0,
+        step_over_mm=0.5,
+        mode="background",
+        workpiece_size_mm=(100.0, 100.0),
+    )
+    cuts = [(m.x, m.y) for m in moves if not m.rapid]
+    assert cuts, "expected non-empty toolpath"
+    # No cut should land deep inside the design region (more than tool_radius
+    # away from the design boundary).
+    keep_out_margin = 0.5 - 0.05
+    for x, y in cuts:
+        inside_x = 40.0 + keep_out_margin <= x <= 60.0 - keep_out_margin
+        inside_y = 40.0 + keep_out_margin <= y <= 60.0 - keep_out_margin
+        assert not (inside_x and inside_y), (
+            f"cut at ({x:.2f}, {y:.2f}) landed inside the design region"
+        )
+    # At least one cut should be near the workpiece boundary.
+    assert any(math.hypot(x - 50.0, y - 50.0) > 20 for x, y in cuts)
+
+
+def test_background_mode_requires_workpiece_size() -> None:
+    design = Polyline(
+        points=((0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)),
+        closed=True,
+    )
+    with pytest.raises(ValueError):
+        pocket(
+            [design],
+            depth_mm=0.4,
+            step_down_mm=0.4,
+            safe_z=5.0,
+            tool_diameter_mm=1.0,
+            step_over_mm=0.5,
+            mode="background",
+        )
+
+
+def test_invalid_pocket_mode_is_rejected() -> None:
+    design = Polyline(
+        points=((0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)),
+        closed=True,
+    )
+    with pytest.raises(ValueError):
+        pocket(
+            [design],
+            depth_mm=0.4,
+            step_down_mm=0.4,
+            safe_z=5.0,
+            tool_diameter_mm=1.0,
+            step_over_mm=0.5,
+            mode="wrong",  # type: ignore[arg-type]
+        )
+
+
+def test_background_mode_with_letter_o_pocket_inside_hole_too() -> None:
+    """A letter "О" placed inside a workpiece: background mode should
+    clear the workpiece-minus-letter AND the central hole of the letter
+    (it's an "island" of background)."""
+    import math
+
+    def ring(cx: float, cy: float, r: float, n: int = 64) -> Polyline:
+        pts = tuple(
+            (cx + r * math.cos(2 * math.pi * i / n), cy + r * math.sin(2 * math.pi * i / n))
+            for i in range(n)
+        )
+        return Polyline(points=pts, closed=True)
+
+    outer = ring(30.0, 30.0, 12.0)
+    inner = ring(30.0, 30.0, 5.0)
+    moves = pocket(
+        [outer, inner],
+        depth_mm=0.4,
+        step_down_mm=0.4,
+        safe_z=5.0,
+        tool_diameter_mm=1.0,
+        step_over_mm=0.5,
+        mode="background",
+        workpiece_size_mm=(60.0, 60.0),
+    )
+    cuts = [(m.x, m.y) for m in moves if not m.rapid]
+    cleared_in_hole = sum(1 for x, y in cuts if math.hypot(x - 30.0, y - 30.0) < 4.0)
+    cleared_around_letter = sum(1 for x, y in cuts if math.hypot(x - 30.0, y - 30.0) > 13.0)
+    assert cleared_in_hole > 0, "expected cuts inside the letter's hole"
+    assert cleared_around_letter > 0, "expected cuts outside the letter"
+
+
 def test_rejects_invalid_parameters() -> None:
     sq = _square()
     for bad in (

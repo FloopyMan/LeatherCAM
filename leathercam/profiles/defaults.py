@@ -51,6 +51,32 @@ DEFAULT_TOOLS: tuple[Tool, ...] = (
         diameter_mm=0.1,
         angle_deg=20.0,
     ),
+    # Tapered ball-nose engravers (treated as "ball" kind with a taper angle).
+    # diameter_mm is the tip diameter (2*R); the angle is the full taper.
+    Tool(
+        id="tapered_ball_R0.25",
+        name="Конический сферический R0.25 L15 D3.175 TiAlN (A=5.1°)",
+        kind="ball",
+        diameter_mm=0.5,
+        angle_deg=5.1,
+        flute_length_mm=15.0,
+    ),
+    Tool(
+        id="tapered_ball_R0.1",
+        name="Конический сферический R0.1 L15 D3.175 (A=5.66°)",
+        kind="ball",
+        diameter_mm=0.2,
+        angle_deg=5.66,
+        flute_length_mm=15.0,
+    ),
+    Tool(
+        id="tapered_ball_R0.5",
+        name="Конический сферический R0.5 L15 D3.175 TiAlN (A=4.15°)",
+        kind="ball",
+        diameter_mm=1.0,
+        angle_deg=4.15,
+        flute_length_mm=15.0,
+    ),
 )
 
 
@@ -149,6 +175,105 @@ DEFAULT_MATERIALS: tuple[Material, ...] = (
                 "flat_1mm", feed_xy=100, feed_z=30, spindle_rpm=12000, step_down_mm=0.05
             ),
             Recommendation("flat_2mm", feed_xy=180, feed_z=60, spindle_rpm=12000, step_down_mm=0.1),
+        ),
+    ),
+    Material(
+        id="pmma_10mm",
+        name="Оргстекло (ПММА) 10 мм",
+        description="Низкие подачи и обороты, иначе плавится. Желателен обдув.",
+        recommendations=(
+            Recommendation(
+                "flat_1mm", feed_xy=400, feed_z=120, spindle_rpm=10000, step_down_mm=0.3
+            ),
+            Recommendation(
+                "flat_2mm", feed_xy=600, feed_z=180, spindle_rpm=10000, step_down_mm=0.5
+            ),
+            Recommendation("vbit_60", feed_xy=500, feed_z=180, spindle_rpm=12000, step_down_mm=0.3),
+            Recommendation(
+                "tapered_ball_R0.25",
+                feed_xy=350,
+                feed_z=120,
+                spindle_rpm=12000,
+                step_down_mm=0.15,
+            ),
+            Recommendation(
+                "tapered_ball_R0.1",
+                feed_xy=250,
+                feed_z=80,
+                spindle_rpm=12000,
+                step_down_mm=0.05,
+            ),
+            Recommendation(
+                "tapered_ball_R0.5",
+                feed_xy=500,
+                feed_z=160,
+                spindle_rpm=12000,
+                step_down_mm=0.2,
+            ),
+        ),
+    ),
+    Material(
+        id="aluminium_amg3m_8mm",
+        name="Лист алюминиевый АМГ3М 8 мм",
+        description="Мягкий сплав Al-Mg, обязательно смазка (WD-40 или керосин).",
+        recommendations=(
+            Recommendation(
+                "flat_1mm", feed_xy=120, feed_z=40, spindle_rpm=12000, step_down_mm=0.05
+            ),
+            Recommendation("flat_2mm", feed_xy=200, feed_z=60, spindle_rpm=12000, step_down_mm=0.1),
+            Recommendation(
+                "tapered_ball_R0.25",
+                feed_xy=120,
+                feed_z=40,
+                spindle_rpm=12000,
+                step_down_mm=0.05,
+            ),
+            Recommendation(
+                "tapered_ball_R0.1",
+                feed_xy=80,
+                feed_z=30,
+                spindle_rpm=12000,
+                step_down_mm=0.03,
+            ),
+            Recommendation(
+                "tapered_ball_R0.5",
+                feed_xy=180,
+                feed_z=60,
+                spindle_rpm=12000,
+                step_down_mm=0.08,
+            ),
+        ),
+    ),
+    Material(
+        id="aluminium_d16_14mm",
+        name="Алюминий Д16 14 мм (квадрат)",
+        description="Дюраль (Al-Cu), плотный — самые лёгкие проходы. Смазка обязательна.",
+        recommendations=(
+            Recommendation("flat_1mm", feed_xy=80, feed_z=25, spindle_rpm=12000, step_down_mm=0.03),
+            Recommendation(
+                "flat_2mm", feed_xy=150, feed_z=45, spindle_rpm=12000, step_down_mm=0.07
+            ),
+            Recommendation(
+                "tapered_ball_R0.25",
+                feed_xy=80,
+                feed_z=25,
+                spindle_rpm=12000,
+                step_down_mm=0.03,
+            ),
+            Recommendation(
+                "tapered_ball_R0.1",
+                feed_xy=50,
+                feed_z=18,
+                spindle_rpm=12000,
+                step_down_mm=0.02,
+            ),
+            Recommendation(
+                "tapered_ball_R0.5",
+                feed_xy=120,
+                feed_z=40,
+                spindle_rpm=12000,
+                step_down_mm=0.05,
+            ),
         ),
     ),
 )

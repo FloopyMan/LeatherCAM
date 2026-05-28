@@ -16,6 +16,7 @@ inside the hole stays uncut.
 from __future__ import annotations
 
 import math
+from typing import Literal
 
 import pyclipper
 
@@ -25,6 +26,8 @@ from leathercam.vector import PolygonWithHoles, Polyline, group_with_holes
 from leathercam.vector.grouping import ensure_ccw, ensure_cw
 
 _CLIPPER_SCALE = 1000.0
+
+PocketMode = Literal["design", "background"]
 
 
 def pocket(
@@ -36,6 +39,8 @@ def pocket(
     tool_diameter_mm: float,
     step_over_mm: float,
     origin: tuple[float, float] = (0.0, 0.0),
+    mode: PocketMode = "design",
+    workpiece_size_mm: tuple[float, float] | None = None,
 ) -> list[Move]:
     if depth_mm <= 0:
         raise ValueError("depth_mm must be positive")
@@ -49,11 +54,21 @@ def pocket(
         raise ValueError("step_over_mm must be positive")
     if step_over_mm > tool_diameter_mm:
         raise ValueError("step_over_mm must not exceed tool diameter")
+    if mode not in ("design", "background"):
+        raise ValueError(f"invalid pocket mode: {mode!r}")
+    if mode == "background" and workpiece_size_mm is None:
+        raise ValueError("background mode requires workpiece_size_mm")
 
     radius = tool_diameter_mm / 2.0
     n_passes = math.ceil(depth_mm / step_down_mm)
     z_levels = [-min(step_down_mm * i, depth_mm) for i in range(1, n_passes + 1)]
     ox, oy = origin
+
+    if mode == "background":
+        assert workpiece_size_mm is not None
+        bbox_w, bbox_h = _design_bbox(polylines, workpiece_size_mm)
+        wp = _workpiece_polyline(bbox_w, bbox_h)
+        polylines = [wp, *polylines]
 
     groups = group_with_holes(polylines)
     rings_per_group: list[list[Polyline]] = []
@@ -105,3 +120,28 @@ def _scale(points: tuple[tuple[float, float], ...]) -> list[tuple[int, int]]:
     if len(scaled) >= 2 and scaled[-1] == scaled[0]:
         scaled = scaled[:-1]
     return scaled
+
+
+def _design_bbox(
+    polylines: list[Polyline], workpiece_size_mm: tuple[float, float]
+) -> tuple[float, float]:
+    """Return the workpiece dimensions. The artwork is expected to fit inside
+    a (0, 0) → (W, H) rectangle; this helper just unpacks the tuple but
+    leaves room for a future "fit to bbox" mode without touching callers."""
+    w, h = workpiece_size_mm
+    if w <= 0 or h <= 0:
+        raise ValueError("workpiece_size_mm components must be positive")
+    return w, h
+
+
+def _workpiece_polyline(width_mm: float, height_mm: float) -> Polyline:
+    """A CCW rectangle from (0, 0) to (width, height)."""
+    return Polyline(
+        points=(
+            (0.0, 0.0),
+            (width_mm, 0.0),
+            (width_mm, height_mm),
+            (0.0, height_mm),
+        ),
+        closed=True,
+    )

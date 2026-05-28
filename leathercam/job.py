@@ -12,6 +12,7 @@ from PIL import ImageOps
 from PIL.Image import Image
 
 from leathercam.cam import pocket, profile, raster_zigzag, v_carve
+from leathercam.cam.pocket import PocketMode
 from leathercam.cam.profile import Side
 from leathercam.gcode import JobConfig, Move, postprocess
 from leathercam.image import Raster, to_mask
@@ -96,6 +97,9 @@ class PocketJobParameters:
     spindle_rpm: int
     safe_z: float
 
+    mode: PocketMode = "design"
+    workpiece_size_mm: tuple[float, float] | None = None
+
     origin: tuple[float, float] = (0.0, 0.0)
     mirror_x: bool = False
 
@@ -163,6 +167,8 @@ def build_pocket_moves(polylines: list[Polyline], params: PocketJobParameters) -
         tool_diameter_mm=params.tool_diameter_mm,
         step_over_mm=params.step_over_mm,
         origin=params.origin,
+        mode=params.mode,
+        workpiece_size_mm=params.workpiece_size_mm,
     )
 
 

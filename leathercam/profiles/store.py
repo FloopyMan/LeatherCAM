@@ -37,22 +37,38 @@ def materials_path() -> Path:
     return config_dir() / MATERIALS_FILENAME
 
 
-def load_tools(path: Path | None = None) -> list[Tool]:
+def load_tools(path: Path | None = None, *, merge_defaults: bool = True) -> list[Tool]:
+    """Load tools, optionally adding any built-in defaults missing by id."""
     p = path or tools_path()
     if not p.exists():
         save_tools(list(DEFAULT_TOOLS), p)
         return list(DEFAULT_TOOLS)
     data = json.loads(p.read_text(encoding="utf-8"))
-    return [_tool_from_dict(d) for d in data]
+    tools = [_tool_from_dict(d) for d in data]
+    if merge_defaults:
+        existing_ids = {t.id for t in tools}
+        additions = [t for t in DEFAULT_TOOLS if t.id not in existing_ids]
+        if additions:
+            tools.extend(additions)
+            save_tools(tools, p)
+    return tools
 
 
-def load_materials(path: Path | None = None) -> list[Material]:
+def load_materials(path: Path | None = None, *, merge_defaults: bool = True) -> list[Material]:
+    """Load materials, optionally adding any built-in defaults missing by id."""
     p = path or materials_path()
     if not p.exists():
         save_materials(list(DEFAULT_MATERIALS), p)
         return list(DEFAULT_MATERIALS)
     data = json.loads(p.read_text(encoding="utf-8"))
-    return [_material_from_dict(d) for d in data]
+    materials = [_material_from_dict(d) for d in data]
+    if merge_defaults:
+        existing_ids = {m.id for m in materials}
+        additions = [m for m in DEFAULT_MATERIALS if m.id not in existing_ids]
+        if additions:
+            materials.extend(additions)
+            save_materials(materials, p)
+    return materials
 
 
 def save_tools(tools: list[Tool], path: Path | None = None) -> None:

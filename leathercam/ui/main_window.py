@@ -116,9 +116,17 @@ class _Parameters(QWidget):
         self.side = QComboBox()
         self.side.addItems(["on", "inside", "outside"])
         self.step_over = self._double(0.05, 5.0, 0.5, 0.05, " мм")
+        self.pocket_mode = QComboBox()
+        self.pocket_mode.addItem("Карман: фрезеровать рисунок", "design")
+        self.pocket_mode.addItem("Карман: фрезеровать фон (оставить рисунок)", "background")
+        self.workpiece_w = self._double(1.0, 500.0, 60.0, 1.0, " мм")
+        self.workpiece_h = self._double(1.0, 500.0, 40.0, 1.0, " мм")
         vector_form.addRow("Диаметр фрезы:", self.tool_diameter)
         vector_form.addRow("Сторона (Profile):", self.side)
         vector_form.addRow("Шаг (step-over, Pocket):", self.step_over)
+        vector_form.addRow("Режим (Pocket):", self.pocket_mode)
+        vector_form.addRow("Размер клише, ширина:", self.workpiece_w)
+        vector_form.addRow("Размер клише, высота:", self.workpiece_h)
 
         self.vcarve_box = QGroupBox("V-carve")
         vcarve_form = QFormLayout(self.vcarve_box)
@@ -248,6 +256,11 @@ class _Parameters(QWidget):
             feed_z=float(self.feed_z.value()),
             spindle_rpm=int(self.spindle_rpm.value()),
             safe_z=float(self.safe_z.value()),
+            mode=self.pocket_mode.currentData(),
+            workpiece_size_mm=(
+                float(self.workpiece_w.value()),
+                float(self.workpiece_h.value()),
+            ),
             mirror_x=bool(self.mirror_x.isChecked()),
         )
 
@@ -463,8 +476,13 @@ class MainWindow(QMainWindow):
             elif strategy == STRATEGY_POCKET and self._polylines:
                 kparams = self.params.to_pocket_parameters()
                 moves = build_pocket_moves(self._polylines, kparams)
-                w = h = None
-                size_text = f"карманов: {sum(1 for p in self._polylines if p.closed)}"
+                if kparams.workpiece_size_mm is not None:
+                    w, h = kparams.workpiece_size_mm
+                else:
+                    w = h = None
+                size_text = (
+                    f"режим {kparams.mode}, карманов: {sum(1 for p in self._polylines if p.closed)}"
+                )
             else:
                 return
         except ValueError as exc:
