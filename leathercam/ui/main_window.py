@@ -72,6 +72,7 @@ from leathercam.vector import (
     load_svg,
     place_polylines,
     polylines_bbox,
+    simplify_polylines,
 )
 
 logger = logging.getLogger(__name__)
@@ -182,6 +183,12 @@ class _Parameters(QWidget):
         self.reset_vector_size_button.setEnabled(False)
         self.vector_x = self._double(-500.0, 500.0, 0.0, 0.5, " мм")
         self.vector_y = self._double(-500.0, 500.0, 0.0, 0.5, " мм")
+        self.simplify_tolerance = self._double(0.0, 1.0, 0.03, 0.01, " мм")
+        self.simplify_tolerance.setToolTip(
+            "Допуск Douglas-Peucker: точки, отклоняющиеся от прямой между соседями\n"
+            "меньше этого значения, удаляются. Сильно уменьшает количество G1\n"
+            "и убирает рывки на GRBL. 0 = выключено."
+        )
         self.center_button = QPushButton("Центрировать в заготовке")
         # MainWindow wires this up — _Parameters has no knowledge of the
         # current polylines / workpiece size.
@@ -198,6 +205,7 @@ class _Parameters(QWidget):
         vector_form.addRow("Положение рисунка X:", self.vector_x)
         vector_form.addRow("Положение рисунка Y:", self.vector_y)
         vector_form.addRow(self.center_button)
+        vector_form.addRow("Упрощение (допуск):", self.simplify_tolerance)
 
         self.vcarve_box = QGroupBox("V-carve")
         vcarve_form = QFormLayout(self.vcarve_box)
@@ -406,6 +414,7 @@ class _Parameters(QWidget):
             "vector_keep_aspect": bool(self.vector_keep_aspect.isChecked()),
             "vector_x": float(self.vector_x.value()),
             "vector_y": float(self.vector_y.value()),
+            "simplify_tolerance": float(self.simplify_tolerance.value()),
             # V-carve
             "v_angle": float(self.v_angle.value()),
             "v_max_depth": float(self.v_max_depth.value()),
@@ -453,6 +462,7 @@ class _Parameters(QWidget):
             ("vector_h", self.vector_h),
             ("vector_x", self.vector_x),
             ("vector_y", self.vector_y),
+            ("simplify_tolerance", self.simplify_tolerance),
             ("v_angle", self.v_angle),
             ("v_max_depth", self.v_max_depth),
             ("depth", self.depth),
@@ -843,12 +853,12 @@ class MainWindow(QMainWindow):
         return True
 
     def _scaled_polylines(self) -> list[Polyline]:
-        """Apply the form's vector-size and position settings to self._polylines.
+        """Apply size, simplification and position to self._polylines.
 
-        Pipeline: fit → place bbox.min at (0, 0) → translate by (vector_x,
-        vector_y). The two-step placement lets the user think in absolute
-        machine coordinates regardless of where the source file put its
-        origin.
+        Pipeline: fit → simplify (Douglas-Peucker) → place at (vector_x,
+        vector_y). Simplification runs in scaled mm so the tolerance
+        means what the user expects, regardless of the source file's
+        native dimensions.
         """
         if not self._polylines:
             return []
@@ -864,6 +874,9 @@ class MainWindow(QMainWindow):
             )
         except ValueError:
             scaled = list(self._polylines)
+        tolerance = float(self.params.simplify_tolerance.value())
+        if tolerance > 0:
+            scaled = simplify_polylines(scaled, tolerance)
         dx = float(self.params.vector_x.value())
         dy = float(self.params.vector_y.value())
         return place_polylines(scaled, dx, dy)
@@ -884,6 +897,9 @@ class MainWindow(QMainWindow):
             )
         except ValueError:
             scaled = list(self._polylines)
+        tolerance = float(self.params.simplify_tolerance.value())
+        if tolerance > 0:
+            scaled = simplify_polylines(scaled, tolerance)
         bbox = polylines_bbox(scaled)
         if bbox is None:
             return

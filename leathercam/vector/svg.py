@@ -30,7 +30,7 @@ from leathercam.vector.types import Polyline
 _MM_PER_PX = 25.4 / 96.0
 
 
-def load_svg(source: str | Path, max_segment_mm: float = 0.1) -> list[Polyline]:
+def load_svg(source: str | Path, max_segment_mm: float = 0.2) -> list[Polyline]:
     """Read an SVG file and return its geometry as polylines in millimeters.
 
     max_segment_mm — maximum length of a straight segment used to approximate

@@ -35,7 +35,7 @@ _UNIT_TO_MM: dict[int, float] = {
 }
 
 
-def load_dxf(source: str | Path, max_segment_mm: float = 0.1) -> list[Polyline]:
+def load_dxf(source: str | Path, max_segment_mm: float = 0.2) -> list[Polyline]:
     """Read a DXF file and return its geometry as polylines in millimeters."""
     if max_segment_mm <= 0:
         raise ValueError("max_segment_mm must be positive")

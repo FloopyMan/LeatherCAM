@@ -179,3 +179,71 @@ def test_place_polylines_empty_returns_empty() -> None:
     from leathercam.vector import place_polylines
 
     assert place_polylines([], 10.0, 20.0) == []
+
+
+def test_simplify_collinear_points_drops_middle() -> None:
+    from leathercam.vector import simplify_polylines
+
+    poly = Polyline(points=((0.0, 0.0), (5.0, 0.0), (10.0, 0.0)))
+    out = simplify_polylines([poly], tolerance_mm=0.01)[0]
+    assert out.points == ((0.0, 0.0), (10.0, 0.0))
+
+
+def test_simplify_keeps_endpoints_of_open_polyline() -> None:
+    from leathercam.vector import simplify_polylines
+
+    poly = Polyline(
+        points=((0.0, 0.0), (5.0, 0.01), (10.0, 0.0)),
+    )
+    out = simplify_polylines([poly], tolerance_mm=0.05)[0]
+    assert out.points[0] == (0.0, 0.0)
+    assert out.points[-1] == (10.0, 0.0)
+
+
+def test_simplify_respects_tolerance_threshold() -> None:
+    from leathercam.vector import simplify_polylines
+
+    poly = Polyline(points=((0.0, 0.0), (5.0, 0.5), (10.0, 0.0)))
+    keep = simplify_polylines([poly], tolerance_mm=0.1)[0]
+    drop = simplify_polylines([poly], tolerance_mm=1.0)[0]
+    assert len(keep.points) == 3  # 0.5 mm deviation > 0.1 mm tolerance
+    assert len(drop.points) == 2  # 0.5 mm deviation < 1.0 mm tolerance
+
+
+def test_simplify_zero_tolerance_is_noop() -> None:
+    from leathercam.vector import simplify_polylines
+
+    poly = Polyline(points=((0.0, 0.0), (1.0, 0.0), (2.0, 0.0)))
+    assert simplify_polylines([poly], tolerance_mm=0.0)[0] is poly
+
+
+def test_simplify_preserves_closed_flag() -> None:
+    from leathercam.vector import simplify_polylines
+
+    poly = Polyline(
+        points=((0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)),
+        closed=True,
+    )
+    out = simplify_polylines([poly], tolerance_mm=0.01)[0]
+    assert out.closed is True
+
+
+def test_simplify_drastically_reduces_circle_points() -> None:
+    """A 500-point circle should collapse to a much smaller polyline
+    while staying within the requested tolerance of the real circle."""
+    import math
+
+    from leathercam.vector import simplify_polylines
+
+    n = 500
+    radius = 10.0
+    pts = tuple(
+        (radius * math.cos(2 * math.pi * i / n), radius * math.sin(2 * math.pi * i / n))
+        for i in range(n)
+    )
+    poly = Polyline(points=pts, closed=True)
+    out = simplify_polylines([poly], tolerance_mm=0.05)[0]
+    assert len(out.points) < n / 5
+    for x, y in out.points:
+        r = math.hypot(x, y)
+        assert abs(r - radius) < 0.1

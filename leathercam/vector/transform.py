@@ -64,6 +64,47 @@ def fit_polylines(
     return scale_polylines(polylines, sx, sy)
 
 
+def simplify_polylines(polylines: list[Polyline], tolerance_mm: float) -> list[Polyline]:
+    """Douglas-Peucker simplification of every polyline.
+
+    Points whose perpendicular deviation from a straight line between
+    their neighbours is below ``tolerance_mm`` are dropped. Cuts the
+    segment count produced by curve-flattened SVG / DXF or pyclipper
+    offsets by an order of magnitude with no visible loss at typical
+    cliché feeds; the GRBL planner can then keep the tool at the
+    commanded feed instead of stuttering through micro-segments.
+
+    tolerance_mm <= 0 returns the input unchanged.
+    """
+    if tolerance_mm <= 0 or not polylines:
+        return list(polylines)
+    from shapely.geometry import LineString
+
+    out: list[Polyline] = []
+    for poly in polylines:
+        if len(poly.points) < 3:
+            out.append(poly)
+            continue
+        pts = list(poly.points)
+        # For closed polylines, repeat the first point so the simplifier
+        # treats the closing edge like any other.
+        if poly.closed and pts[-1] != pts[0]:
+            pts.append(pts[0])
+        try:
+            line = LineString(pts).simplify(tolerance_mm, preserve_topology=False)
+        except (ValueError, TypeError):
+            out.append(poly)
+            continue
+        coords = list(line.coords)
+        if poly.closed and len(coords) >= 2 and coords[-1] == coords[0]:
+            coords = coords[:-1]
+        if len(coords) < 2:
+            out.append(poly)
+            continue
+        out.append(Polyline(points=tuple(coords), closed=poly.closed))
+    return out
+
+
 def translate_polylines(polylines: list[Polyline], dx: float, dy: float) -> list[Polyline]:
     """Shift every point by (dx, dy)."""
     if dx == 0.0 and dy == 0.0:

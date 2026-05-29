@@ -7,6 +7,7 @@ from leathercam.vector.transform import (
     place_polylines,
     polylines_bbox,
     scale_polylines,
+    simplify_polylines,
     translate_polylines,
 )
 from leathercam.vector.types import Polyline
@@ -22,5 +23,6 @@ __all__ = [
     "place_polylines",
     "polylines_bbox",
     "scale_polylines",
+    "simplify_polylines",
     "translate_polylines",
 ]

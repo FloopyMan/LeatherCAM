@@ -25,6 +25,8 @@ from leathercam.vector import Polyline
 Side = Literal["on", "inside", "outside"]
 
 _CLIPPER_SCALE = 1000.0
+# See leathercam/cam/pocket.py for why we coarsen the default arc tolerance.
+_CLIPPER_ARC_TOL = 50.0
 
 
 def profile(
@@ -98,6 +100,7 @@ def _offset_closed(poly: Polyline, delta_mm: float) -> list[Polyline]:
         scaled = scaled[:-1]
 
     pco = pyclipper.PyclipperOffset()
+    pco.ArcTolerance = _CLIPPER_ARC_TOL
     pco.AddPath(scaled, pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
     result = pco.Execute(delta_mm * _CLIPPER_SCALE)
 

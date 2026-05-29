@@ -26,6 +26,11 @@ from leathercam.vector import PolygonWithHoles, Polyline, group_with_holes
 from leathercam.vector.grouping import ensure_ccw, ensure_cw
 
 _CLIPPER_SCALE = 1000.0
+# pyclipper ArcTolerance is in scaled-int units. Default 0.25 ≙ 0.00025mm
+# at our scale, which produces ~30+ micro-segments per 90° corner — the
+# GRBL planner stutters on those. 50 ≙ 0.05mm — visually identical at
+# typical cliché sizes but ~5× fewer segments per arc.
+_CLIPPER_ARC_TOL = 50.0
 
 PocketMode = Literal["design", "background"]
 
@@ -97,6 +102,7 @@ def _cascade_offsets(
     holes_scaled = [_scale(ensure_cw(h.points)) for h in group.holes]
 
     pco = pyclipper.PyclipperOffset()
+    pco.ArcTolerance = _CLIPPER_ARC_TOL
     pco.AddPath(outer_scaled, pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
     for hole in holes_scaled:
         pco.AddPath(hole, pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
